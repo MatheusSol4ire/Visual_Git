@@ -49,6 +49,11 @@ webview/                a tela (Preact), roda isolada dentro do VS Code
 
 O Visual Git só lê o repositório que está aberto, usando o Git instalado na sua máquina. Nenhum dado é enviado para a internet.
 
+## Segurança
+
+- O Git é sempre executado pelo caminho absoluto: o mesmo que a extensão Git do VS Code usa ou, na falta dela, o encontrado no PATH. Um `git.exe` colocado dentro de um projeto nunca é executado.
+- A extensão só funciona em pastas marcadas como confiáveis (fica desativada no Modo Restrito do VS Code).
+
 ## Licença
 
 [MIT](LICENSE)

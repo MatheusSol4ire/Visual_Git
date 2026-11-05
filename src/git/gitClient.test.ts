@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { findRepo, NotARepoError, readCommits } from './gitClient.ts';
+import { delimiter, isAbsolute, join } from 'node:path';
+import { findGitInPath, findRepo, NotARepoError, readCommits } from './gitClient.ts';
 
 // Repositórios de verdade, criados em pasta temporária e apagados no final.
 let base: string;
+const gitPath = findGitInPath();
 
 const env = {
   ...process.env,
@@ -39,13 +40,13 @@ after(() => {
 test('pasta sem Git dá NotARepoError', async () => {
   const folder = join(base, 'sem-git');
   mkdirSync(folder);
-  await assert.rejects(findRepo(folder), NotARepoError);
+  await assert.rejects(findRepo(gitPath, folder), NotARepoError);
 });
 
 test('repositório sem commits devolve lista vazia', async () => {
   const folder = join(base, 'vazio');
   git(base, 'init', folder);
-  const repo = await findRepo(folder);
+  const repo = await findRepo(gitPath, folder);
   assert.equal(repo.name, 'vazio');
   const page = await readCommits(repo, 0, 10);
   assert.deepEqual(page, { commits: [], hasMore: false });
@@ -62,7 +63,7 @@ test('lê branches, tag, merge e paginação', async () => {
   commit(folder, 'c.txt', 'Ajusta o texto ✨');
   git(folder, 'merge', '--no-ff', 'feature/tela', '-m', 'Junta a tela');
 
-  const repo = await findRepo(folder);
+  const repo = await findRepo(gitPath, folder);
   const page = await readCommits(repo, 0, 10);
 
   assert.equal(page.commits.length, 4);
@@ -92,4 +93,23 @@ test('lê branches, tag, merge e paginação', async () => {
     [...p1.commits, ...p2.commits].map((c) => c.hash),
     page.commits.map((c) => c.hash),
   );
+});
+
+test('nunca usa um git falso plantado na pasta do projeto', async () => {
+  const folder = join(base, 'malicioso');
+  git(base, 'init', folder);
+  const fake = join(folder, process.platform === 'win32' ? 'git.exe' : 'git');
+  writeFileSync(fake, 'falso');
+
+  // Mesmo com "." no PATH, a busca ignora caminhos relativos.
+  const found = findGitInPath({ PATH: ['.', process.env.PATH ?? process.env.Path ?? ''].join(delimiter) });
+  assert.notEqual(found, fake);
+  assert.ok(isAbsolute(found));
+
+  const repo = await findRepo(found, folder);
+  assert.equal(repo.gitPath, found);
+});
+
+test('PATH sem Git dá erro claro', () => {
+  assert.throws(() => findGitInPath({ PATH: join(base, 'nada-aqui') }), /Git não foi encontrado/);
 });

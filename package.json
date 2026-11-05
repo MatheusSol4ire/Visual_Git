@@ -26,6 +26,13 @@
   "type": "module",
   "main": "./dist/extension.cjs",
   "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "O Visual Git executa o Git na pasta aberta. Por segurança, só funciona em pastas marcadas como confiáveis."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 import { findRepo, GitNotFoundError, NotARepoError, readCommits, type Repo } from '../git/gitClient.ts';
+import { resolveGitPath } from '../git/resolveGit.ts';
 import { getMotionMode } from '../settings.ts';
 import type { FromWebview, RepoState, ToWebview } from '../shared/protocol.ts';
 
@@ -82,7 +83,7 @@ export class VisualGitPanel {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) return { kind: 'noWorkspace' };
     try {
-      this.repo = await findRepo(folder.uri.fsPath);
+      this.repo = await findRepo(await resolveGitPath(), folder.uri.fsPath);
       return undefined;
     } catch (error) {
       if (error instanceof GitNotFoundError) return { kind: 'gitMissing' };
