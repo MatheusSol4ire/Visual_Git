@@ -1,0 +1,74 @@
+{
+  "name": "visual-git",
+  "displayName": "Visual Git",
+  "description": "Veja o histórico de commits do seu projeto de forma visual, simples e bonita.",
+  "version": "0.0.1",
+  "publisher": "matheussol4ire",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MatheusSol4ire/Visual_Git.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Visualization"
+  ],
+  "keywords": [
+    "git",
+    "graph",
+    "history",
+    "commits",
+    "visual"
+  ],
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "visualGit.open",
+        "title": "Abrir",
+        "category": "Visual Git"
+      }
+    ],
+    "configuration": {
+      "title": "Visual Git",
+      "properties": {
+        "visualGit.animations": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Segue a configuração do VS Code (workbench.reduceMotion) e do sistema operacional.",
+            "Animações sempre ligadas.",
+            "Animações sempre desligadas."
+          ],
+          "default": "auto",
+          "description": "Controla as animações da tela do Visual Git."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test",
+    "package": "npm run check && node esbuild.mjs --production && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "preact": "^11.1.1",
+    "typescript": "^7.0.2"
+  }
+}

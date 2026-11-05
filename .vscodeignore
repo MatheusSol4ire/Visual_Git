@@ -1,0 +1,10 @@
+# Tudo que NÃO entra no arquivo .vsix (a extensão instalável).
+# Só vão: dist/, package.json, README.md, LICENSE, CHANGELOG.md e media/.
+**
+!dist/**
+!media/**
+!package.json
+!README.md
+!LICENSE
+!CHANGELOG.md
+dist/**/*.map

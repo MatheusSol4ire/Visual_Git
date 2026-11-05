@@ -1,0 +1,26 @@
+# Dependências e saídas de build
+node_modules/
+dist/
+*.vsix
+*.tsbuildinfo
+
+# Gerado pelo graphify (contém caminhos locais da máquina)
+graphify-out/
+
+# Testes do VS Code
+.vscode-test/
+
+# Segredos e variáveis de ambiente — NUNCA subir
+.env
+.env.*
+*.pem
+*.key
+
+# Configurações locais do Claude Code
+.claude/settings.local.json
+
+# Lixo de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
