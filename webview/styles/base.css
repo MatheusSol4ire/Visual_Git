@@ -1,0 +1,271 @@
+/* =====================================================================
+   Visual Git — base visual compartilhada
+   - Cores de interface vêm do tema do VS Code (claro/escuro automático).
+   - Paleta das branches: suave e harmônica, com versão para cada tema.
+   ===================================================================== */
+
+:root {
+  /* Paleta para tema escuro (padrão) */
+  --vg-c0: #7aa2f7; /* azul */
+  --vg-c1: #6fcfbf; /* verde-água */
+  --vg-c2: #e5b567; /* âmbar */
+  --vg-c3: #ee8fb0; /* rosa */
+  --vg-c4: #b09cf2; /* violeta */
+  --vg-c5: #9cc97a; /* verde */
+  --vg-c6: #f0a274; /* laranja */
+  --vg-c7: #79c4e8; /* céu */
+
+  --vg-added: #6fbf8a;
+  --vg-deleted: #ee7d86;
+  --vg-modified: #7aa2f7;
+  --vg-renamed: #b09cf2;
+
+  /* Ritmo das animações: rápidas e suaves */
+  --vg-fast: 120ms;
+  --vg-medium: 200ms;
+  --vg-slow: 320ms;
+  --vg-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --vg-radius: 6px;
+}
+
+/* Tema claro: as mesmas cores, em tons mais fundos para manter o contraste */
+body.vscode-light,
+body.vscode-high-contrast-light {
+  --vg-c0: #3e6fd8;
+  --vg-c1: #1a9283;
+  --vg-c2: #b07a12;
+  --vg-c3: #cc4f7c;
+  --vg-c4: #7556d4;
+  --vg-c5: #4f8f2c;
+  --vg-c6: #c9612a;
+  --vg-c7: #2283b8;
+
+  --vg-added: #2e8a4e;
+  --vg-deleted: #c8414c;
+  --vg-modified: #3e6fd8;
+  --vg-renamed: #7556d4;
+}
+
+/* ---------------- Controle de animações ----------------
+   "off": desliga tudo. "auto": desliga só se o sistema pedir menos movimento. */
+body[data-motion='off'] *,
+body[data-motion='off'] *::before,
+body[data-motion='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-motion='auto'] *,
+  body[data-motion='auto'] *::before,
+  body[data-motion='auto'] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes vg-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vg-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vg-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ---------------- Base ---------------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* Definido no body (e não no :root) para enxergar as cores do tema do VS Code */
+  --vg-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vg-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: none;
+  border-radius: var(--vg-radius);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background-color var(--vg-fast) var(--vg-ease), transform var(--vg-fast) var(--vg-ease);
+}
+
+button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+button.ghost {
+  color: var(--vscode-foreground);
+  background: transparent;
+  padding: 4px 8px;
+}
+
+button.ghost:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+code,
+.mono {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.92em;
+}
+
+/* ---------------- Avatar com iniciais ---------------- */
+.avatar {
+  --c: var(--vg-c0);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+  user-select: none;
+}
+
+.avatar-md {
+  width: 24px;
+  height: 24px;
+  font-size: 9.5px;
+}
+
+.avatar-lg {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+}
+
+/* ---------------- Etiquetas (branch, tag, remoto) ---------------- */
+.refs {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82em;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.ref-remote,
+.ref-head {
+  color: var(--vscode-descriptionForeground);
+  border-style: dashed;
+}
+
+.ref-tag {
+  border-color: color-mix(in srgb, var(--vg-c2) 55%, transparent);
+  color: var(--vg-c2);
+}
+
+.ref-current {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.ref-icon {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+
+/* ---------------- Estados vazios / avisos ---------------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  animation: vg-fade-up var(--vg-slow) var(--vg-ease) both;
+}
+
+.empty-title {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  font-size: 1.05em;
+}
+
+.empty.error .empty-title {
+  color: var(--vscode-errorForeground);
+}
+
+.skeleton {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  animation: vg-pulse 1.4s ease-in-out infinite;
+}

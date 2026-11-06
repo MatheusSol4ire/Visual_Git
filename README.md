@@ -7,7 +7,22 @@ Uma extensão para o VS Code que mostra o histórico de commits do seu projeto d
 ## Como usar
 
 1. Abra a pasta de um projeto que usa Git no VS Code.
-2. Abra a paleta de comandos (`Ctrl+Shift+P`) e rode **Visual Git: Abrir**.
+2. Clique no ícone do **Visual Git** na barra lateral (ou rode **Visual Git: Abrir** pela paleta de comandos, `Ctrl+Shift+P`).
+3. Clique num commit para ver os detalhes: mensagem completa, autor, data e arquivos alterados.
+4. Clique num arquivo para ver o **antes e depois** dele.
+
+A lista se atualiza sozinha quando você faz um commit, troca de branch ou baixa novidades do servidor.
+
+| Elemento | Significado |
+|---|---|
+| Bolinha cheia | Um commit |
+| Bolinha vazada | Uma junção (merge) de duas linhas de trabalho |
+| Anel em volta da bolinha | O commit onde você está agora |
+| Etiqueta destacada | A branch em que você está |
+| Etiqueta com nuvem | Branch que está no servidor (ex.: GitHub) |
+| Etiqueta com marcador | Versão (tag) |
+
+Navegação pelo teclado: `↑` `↓` para escolher, `Enter` para abrir.
 
 ### Animações
 
@@ -36,13 +51,19 @@ npm run check      # verificação de tipos e testes
 ### Estrutura
 
 ```
-src/
+src/                    roda dentro do VS Code (Node)
   extension.ts          ponto de entrada da extensão
   settings.ts           leitura das configurações
   git/                  leitura do Git (sem nada de tela)
-  panel/                a aba do Visual Git e a ponte com a tela
-  shared/protocol.ts    tipos das mensagens entre extensão e tela
-webview/                a tela (Preact), roda isolada dentro do VS Code
+  repo/                 qual repositório está aberto e quando ele muda
+  views/                barra lateral, aba de detalhes e a ponte com as telas
+  shared/protocol.ts    tipos das mensagens entre extensão e telas
+webview/                as telas (Preact), rodam isoladas dentro do VS Code
+  commits/              lista de commits da barra lateral
+  details/              aba de detalhes do commit
+  graph/                cálculo e desenho do grafo
+  shared/               peças usadas pelas duas telas
+  styles/               visual (cores, animações)
 ```
 
 ## Privacidade

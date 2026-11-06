@@ -5,3 +5,4 @@
 *.gif binary
 *.ico binary
 *.vsix binary
+graphify-out/graph.json merge=graphify

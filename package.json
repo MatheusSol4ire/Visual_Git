@@ -34,13 +34,46 @@
     "virtualWorkspaces": false
   },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "visualGit",
+          "title": "Visual Git",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "visualGit": [
+        {
+          "type": "webview",
+          "id": "visualGit.commits",
+          "name": "Commits"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "visualGit.open",
         "title": "Abrir",
         "category": "Visual Git"
+      },
+      {
+        "command": "visualGit.refresh",
+        "title": "Atualizar",
+        "category": "Visual Git",
+        "icon": "$(refresh)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "visualGit.refresh",
+          "when": "view == visualGit.commits",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Visual Git",
       "properties": {
@@ -66,7 +99,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\" \"webview/**/*.test.ts\"",
     "check": "npm run typecheck && npm test",
     "package": "npm run check && node esbuild.mjs --production && vsce package --no-dependencies"
   },

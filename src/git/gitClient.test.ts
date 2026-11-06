@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
-import { findGitInPath, findRepo, NotARepoError, readCommits } from './gitClient.ts';
+import { findGitInPath, findRepo, NotARepoError, readCommitDetails, readCommits, readHead } from './gitClient.ts';
 
 // Repositórios de verdade, criados em pasta temporária e apagados no final.
 let base: string;
@@ -112,4 +112,45 @@ test('nunca usa um git falso plantado na pasta do projeto', async () => {
 
 test('PATH sem Git dá erro claro', () => {
   assert.throws(() => findGitInPath({ PATH: join(base, 'nada-aqui') }), /Git não foi encontrado/);
+});
+
+test('detalhes do commit: arquivos alterados, renomeados e removidos', async () => {
+  const folder = join(base, 'detalhes');
+  git(base, 'init', folder);
+  writeFileSync(join(folder, 'app.txt'), 'linha 1\nlinha 2\n');
+  writeFileSync(join(folder, 'antigo.txt'), 'conteúdo que será renomeado\n'.repeat(5));
+  writeFileSync(join(folder, 'apagar.txt'), 'tchau\n');
+  git(folder, 'add', '.');
+  git(folder, 'commit', '-m', 'Primeiro');
+
+  writeFileSync(join(folder, 'app.txt'), 'linha 1\nlinha 2 mudou\nlinha 3\n');
+  git(folder, 'mv', 'antigo.txt', 'novo.txt');
+  git(folder, 'rm', '-q', 'apagar.txt');
+  git(folder, 'add', '.');
+  git(folder, 'commit', '-m', 'Organiza arquivos\n\nExplicação mais longa.');
+
+  const repo = await findRepo(gitPath, folder);
+  assert.equal(await readHead(repo), 'main');
+  const [latest, first] = (await readCommits(repo, 0, 10)).commits;
+
+  const details = await readCommitDetails(repo, latest!.hash);
+  assert.equal(details.subject, 'Organiza arquivos');
+  assert.equal(details.body, 'Explicação mais longa.');
+  assert.equal(details.comparedTo, first!.hash);
+  const byPath = Object.fromEntries(details.files.map((f) => [f.path, f]));
+  assert.deepEqual(byPath['app.txt'], { path: 'app.txt', status: 'modified', additions: 2, deletions: 1 });
+  assert.equal(byPath['novo.txt']?.status, 'renamed');
+  assert.equal(byPath['novo.txt']?.oldPath, 'antigo.txt');
+  assert.equal(byPath['apagar.txt']?.status, 'deleted');
+
+  // Primeiro commit: tudo aparece como adicionado.
+  const root = await readCommitDetails(repo, first!.hash);
+  assert.equal(root.comparedTo, null);
+  assert.ok(root.files.every((f) => f.status === 'added'));
+  assert.equal(root.totalFiles, 3);
+});
+
+test('recusa "hash" que tentaria virar uma opção do Git', async () => {
+  const repo = await findRepo(gitPath, join(base, 'detalhes'));
+  await assert.rejects(readCommitDetails(repo, '--output=/tmp/x'), /Commit inválido/);
 });

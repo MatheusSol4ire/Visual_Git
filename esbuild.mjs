@@ -1,6 +1,7 @@
-// Gera dois pacotes:
-//  - dist/extension.cjs -> o "backend" que roda dentro do VS Code (Node)
-//  - dist/webview.js + dist/webview.css -> a tela (roda num navegador embutido)
+// Gera os pacotes:
+//  - dist/extension.cjs           -> o "backend" que roda dentro do VS Code (Node)
+//  - dist/commits.js + .css       -> a lista de commits da barra lateral
+//  - dist/details.js + .css       -> a aba de detalhes do commit
 import * as esbuild from 'esbuild';
 import { rmSync } from 'node:fs';
 
@@ -30,8 +31,11 @@ const builds = [
   },
   {
     ...common,
-    entryPoints: ['webview/main.tsx'],
-    outfile: 'dist/webview.js',
+    entryPoints: {
+      commits: 'webview/commits/main.tsx',
+      details: 'webview/details/main.tsx',
+    },
+    outdir: 'dist',
     platform: 'browser',
     format: 'iife',
     target: 'es2022',

@@ -3,8 +3,26 @@ import { isAbsolute } from 'node:path';
 import { findGitInPath } from './gitClient.ts';
 
 /** Pedaço mínimo da API da extensão Git nativa do VS Code que usamos. */
+export interface BuiltInGitApi {
+  git: { path: string };
+  /** Endereço que o VS Code entende como "este arquivo nesta versão do Git". */
+  toGitUri(uri: vscode.Uri, ref: string): vscode.Uri;
+}
+
 interface BuiltInGitExtension {
-  getAPI(version: 1): { git: { path: string } };
+  getAPI(version: 1): BuiltInGitApi;
+}
+
+/** API da extensão Git nativa, ou `undefined` se ela estiver desativada. */
+export async function getBuiltInGitApi(): Promise<BuiltInGitApi | undefined> {
+  try {
+    const extension = vscode.extensions.getExtension<BuiltInGitExtension>('vscode.git');
+    if (!extension) return undefined;
+    const exports = extension.isActive ? extension.exports : await extension.activate();
+    return exports.getAPI(1);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -13,15 +31,7 @@ interface BuiltInGitExtension {
  * 2º: busca segura no PATH (nunca na pasta do projeto).
  */
 export async function resolveGitPath(): Promise<string> {
-  try {
-    const extension = vscode.extensions.getExtension<BuiltInGitExtension>('vscode.git');
-    if (extension) {
-      const api = (extension.isActive ? extension.exports : await extension.activate()).getAPI(1);
-      const path = api.git.path;
-      if (path && isAbsolute(path)) return path;
-    }
-  } catch {
-    // extensão Git nativa desativada ou indisponível: usamos o PATH
-  }
+  const path = (await getBuiltInGitApi())?.git.path;
+  if (path && isAbsolute(path)) return path;
   return findGitInPath();
 }

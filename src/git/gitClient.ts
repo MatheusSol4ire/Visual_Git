@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
 import { LOG_FORMAT, parseLog } from './parseLog.ts';
-import type { Commit } from '../shared/protocol.ts';
+import { parseFileChanges, parseShow, SHOW_FORMAT } from './parseDetails.ts';
+import type { Commit, CommitDetails } from '../shared/protocol.ts';
 
 export class GitNotFoundError extends Error {}
 export class NotARepoError extends Error {}
@@ -97,4 +98,69 @@ export async function readCommits(repo: Repo, skip: number, limit: number): Prom
   ]);
   const commits = parseLog(raw);
   return { commits: commits.slice(0, limit), hasMore: commits.length > limit };
+}
+
+/** Nome da branch atual, ou `null` se o HEAD estiver solto (detached) ou o repositório vazio. */
+export async function readHead(repo: Repo): Promise<string | null> {
+  try {
+    const name = (await git(repo.gitPath, repo.root, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Pastas internas do Git: `gitDir` (onde fica o HEAD) e `commonDir` (onde ficam as refs). */
+export async function readGitDirs(repo: Repo): Promise<{ gitDir: string; commonDir: string }> {
+  const raw = await git(repo.gitPath, repo.root, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']);
+  const [gitDir = '', commonDir = ''] = raw.split(/\r?\n/);
+  return { gitDir: gitDir.trim(), commonDir: (commonDir || gitDir).trim() };
+}
+
+const HASH = /^[0-9a-f]{4,64}$/i;
+
+/** Garante que o valor é um hash de verdade, para nunca ser lido pelo Git como uma opção. */
+export function isCommitHash(value: unknown): value is string {
+  return typeof value === 'string' && HASH.test(value);
+}
+
+/** Máximo de arquivos enviados para a tela; commits gigantes ficam com a lista cortada. */
+const MAX_FILES = 500;
+
+/** Detalhes de um commit: mensagem completa e arquivos alterados (comparados com o primeiro pai). */
+export async function readCommitDetails(repo: Repo, hash: string): Promise<CommitDetails> {
+  if (!isCommitHash(hash)) throw new Error('Commit inválido.');
+
+  const show = await git(repo.gitPath, repo.root, [
+    '-c', 'i18n.logOutputEncoding=UTF-8',
+    'show', '-s', '--decorate=full', `--format=${SHOW_FORMAT}`, hash,
+  ]);
+  const info = parseShow(show);
+  if (!info) throw new Error('Não foi possível ler este commit.');
+
+  const comparedTo = info.parents[0] ?? null;
+  // Primeiro commit: compara com "nada" (--root). Merges: compara com o primeiro pai.
+  const range = comparedTo ? [comparedTo, info.hash] : ['--root', info.hash];
+  const base = ['-c', 'core.quotepath=off', 'diff-tree', '-r', '-M', '-z', '--no-commit-id'];
+  const [nameStatus, numstat] = await Promise.all([
+    git(repo.gitPath, repo.root, [...base, '--name-status', ...range]),
+    git(repo.gitPath, repo.root, [...base, '--numstat', ...range]),
+  ]);
+  const files = parseFileChanges(nameStatus, numstat);
+
+  return {
+    hash: info.hash,
+    parents: info.parents,
+    authorName: info.authorName,
+    authorEmail: info.authorEmail,
+    date: info.date,
+    subject: info.subject,
+    refs: info.refs,
+    committerName: info.committerName,
+    committerDate: info.committerDate,
+    body: info.body,
+    files: files.slice(0, MAX_FILES),
+    totalFiles: files.length,
+    comparedTo,
+  };
 }
