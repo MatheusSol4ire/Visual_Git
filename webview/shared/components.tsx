@@ -19,15 +19,42 @@ const REF_LABEL: Record<Ref['type'], string> = {
   head: 'Você está neste commit',
 };
 
+interface RefChipsProps {
+  refs: Ref[];
+  /** Clique numa etiqueta (ex.: para destacar o caminho da branch). */
+  onPick?: (ref: Ref) => void;
+  /** Mouse entrou (ref) ou saiu (null) de uma etiqueta. */
+  onHover?: (ref: Ref | null) => void;
+  /** Etiqueta destacada no momento (nome e tipo: uma tag e uma branch podem ter o mesmo nome). */
+  active?: Pick<Ref, 'name' | 'type'> | null;
+}
+
 /** Etiquetas de branch, tag e remoto. A branch atual ganha destaque. */
-export function RefChips({ refs }: { refs: Ref[] }) {
+export function RefChips({ refs, onPick, onHover, active }: RefChipsProps) {
   if (refs.length === 0) return null;
   return (
     <span class="refs">
       {refs.map((ref) => {
         const tip = ref.current ? 'Você está nesta branch' : REF_LABEL[ref.type];
+        const classes = ['ref', `ref-${ref.type}`];
+        if (ref.current) classes.push('ref-current');
+        if (onPick) classes.push('ref-pickable');
+        if (active && active.name === ref.name && active.type === ref.type) classes.push('ref-active');
         return (
-          <span key={ref.type + ref.name} class={`ref ref-${ref.type}${ref.current ? ' ref-current' : ''}`} title={`${tip}: ${ref.name}`}>
+          <span
+            key={ref.type + ref.name}
+            class={classes.join(' ')}
+            title={onPick ? `${tip}: ${ref.name}\nClique para destacar o caminho` : `${tip}: ${ref.name}`}
+            onClick={
+              onPick &&
+              ((event) => {
+                event.stopPropagation(); // não abre o commit, só destaca
+                onPick(ref);
+              })
+            }
+            onMouseEnter={onHover && (() => onHover(ref))}
+            onMouseLeave={onHover && (() => onHover(null))}
+          >
             {ref.type === 'tag' && <TagIcon />}
             {ref.type === 'remote' && <CloudIcon />}
             {ref.name}

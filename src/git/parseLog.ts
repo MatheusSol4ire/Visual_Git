@@ -1,35 +1,48 @@
 import type { Commit, Ref } from '../shared/protocol.ts';
 
-// Separadores de controle ASCII: praticamente nunca aparecem em mensagens de commit,
-// então são seguros para dividir a saída do `git log`.
-const FIELD = '\x1f';
-const RECORD = '\x1e';
+// O separador é o NUL: o Git nunca o coloca em nomes, e-mails ou mensagens, então nenhum texto
+// vindo do repositório consegue "fingir" um campo ou um commit a mais.
+const FIELD = '\0';
+const FIELD_COUNT = 7;
 
-/** Formato passado ao `git log --format=...`. A ordem precisa bater com `parseLog`. */
-export const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%aI', '%D', '%s'].join('%x1f') + '%x1e';
+/**
+ * Formato passado ao `git log -z --format=...`. A ordem precisa bater com `parseLog`.
+ * Com `-z`, o Git também termina cada commit com um NUL, então cada commit ocupa sempre 7 campos.
+ */
+export const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%aI', '%D', '%s'].join('%x00');
 
-/** Converte a saída de `git log --decorate=full --format=LOG_FORMAT` em commits. */
+/** Hash completo de commit (SHA-1 com 40 dígitos ou SHA-256 com 64). */
+const FULL_HASH = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+export function isFullHash(value: string): boolean {
+  return FULL_HASH.test(value);
+}
+
+/** Lê o campo %P ("pai1 pai2"). Devolve `undefined` se algum item não for um hash de verdade. */
+export function parseParents(value: string): string[] | undefined {
+  const parents = value.split(' ').filter(Boolean);
+  return parents.every(isFullHash) ? parents : undefined;
+}
+
+/** Converte a saída de `git log -z --decorate=full --format=LOG_FORMAT` em commits. */
 export function parseLog(raw: string): Commit[] {
   const commits: Commit[] = [];
-  for (const chunk of raw.split(RECORD)) {
-    // O git coloca uma quebra de linha entre registros; ela fica no início do próximo.
-    const record = chunk.replace(/^[\r\n]+/, '');
-    if (!record) continue;
-
-    const fields = record.split(FIELD);
-    if (fields.length < 7) continue;
-    const [hash, parents, authorName, authorEmail, date, decorations, ...subjectParts] = fields;
-    if (!hash) continue;
+  const fields = raw.split(FIELD);
+  for (let i = 0; i + FIELD_COUNT <= fields.length; i += FIELD_COUNT) {
+    const [hash = '', parentList = '', authorName = '', authorEmail = '', date = '', decorations = '', subject = ''] =
+      fields.slice(i, i + FIELD_COUNT);
+    // Registros com hash ou pais estranhos são descartados: nunca chegam ao grafo nem aos detalhes.
+    const parents = parseParents(parentList);
+    if (!isFullHash(hash) || !parents) continue;
 
     commits.push({
       hash,
-      parents: parents ? parents.split(' ').filter(Boolean) : [],
-      authorName: authorName ?? '',
-      authorEmail: authorEmail ?? '',
-      date: date ?? '',
-      // Se por acaso o assunto tiver o separador, juntamos de volta.
-      subject: subjectParts.join(FIELD),
-      refs: parseRefs(decorations ?? ''),
+      parents,
+      authorName,
+      authorEmail,
+      date,
+      subject,
+      refs: parseRefs(decorations),
     });
   }
   return commits;

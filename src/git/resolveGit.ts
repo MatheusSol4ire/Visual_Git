@@ -7,6 +7,10 @@ export interface BuiltInGitApi {
   git: { path: string };
   /** Endereço que o VS Code entende como "este arquivo nesta versão do Git". */
   toGitUri(uri: vscode.Uri, ref: string): vscode.Uri;
+  /** Repositório que a extensão nativa abriu e que contém este arquivo (`null` se ela não abriu nenhum). */
+  getRepository(uri: vscode.Uri): unknown;
+  /** Pede para a extensão nativa abrir o repositório desta pasta (`null` se ela não conseguir). */
+  openRepository?(root: vscode.Uri): Promise<unknown>;
 }
 
 interface BuiltInGitExtension {

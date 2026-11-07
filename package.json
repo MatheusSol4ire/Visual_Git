@@ -3,6 +3,7 @@
   "displayName": "Visual Git",
   "description": "Veja o histórico de commits do seu projeto de forma visual, simples e bonita.",
   "version": "0.0.1",
+  "private": true,
   "publisher": "matheussol4ire",
   "license": "MIT",
   "repository": {
@@ -91,6 +92,20 @@
           ],
           "default": "auto",
           "description": "Controla as animações da tela do Visual Git."
+        },
+        "visualGit.parentFolderRepos": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "always"
+          ],
+          "enumDescriptions": [
+            "Pergunta antes de mostrar o histórico de um Git que está numa pasta acima da aberta.",
+            "Mostra sem perguntar. Não muda nada no Git do VS Code; se git.openRepositoryInParentFolders for \"never\", ele continua valendo."
+          ],
+          "default": "ask",
+          "scope": "application",
+          "description": "O que o Visual Git faz quando o Git do projeto está numa pasta acima da pasta aberta. Só vale nas configurações do usuário (um projeto não consegue mudar)."
         }
       }
     }
@@ -101,7 +116,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.ts\" \"webview/**/*.test.ts\"",
     "check": "npm run typecheck && npm test",
-    "package": "npm run check && node esbuild.mjs --production && vsce package --no-dependencies"
+    "vscode:prepublish": "npm run check && node esbuild.mjs --production",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

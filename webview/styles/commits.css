@@ -44,12 +44,135 @@
   flex: none;
 }
 
+/* ---------------- Filtro de branches ---------------- */
+.filter-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  animation: vg-fade var(--vg-medium) var(--vg-ease) both;
+}
+
+.filter-label {
+  flex: none;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.filter-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.filter {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  font: inherit;
+  font-size: 0.92em;
+  height: 24px;
+  padding: 0 24px 0 8px;
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+  background: var(--vscode-dropdown-background, transparent);
+  border: 1px solid var(--vscode-dropdown-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+  border-radius: var(--vg-radius);
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color var(--vg-fast) var(--vg-ease);
+}
+
+.filter:hover {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
+}
+
+.filter:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.filter option,
+.filter optgroup {
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+  background: var(--vscode-dropdown-listBackground, var(--vscode-dropdown-background));
+}
+
+.chevron {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  pointer-events: none;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---------------- Avisos do topo ---------------- */
+.summary,
+.highlight-bar {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 7px 10px;
+  font-size: 0.9em;
+  line-height: 1.45;
+  border-radius: var(--vg-radius);
+  animation: vg-fade-up var(--vg-medium) var(--vg-ease) both;
+}
+
+.summary {
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vg-c2) 11%, transparent);
+}
+
+.summary-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  color: var(--vg-c2);
+}
+
+.highlight-bar {
+  align-items: center;
+  background: color-mix(in srgb, var(--vscode-focusBorder) 14%, transparent);
+}
+
+.highlight-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.small-button {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 0.95em;
+}
+
 /* ---------------- Lista ---------------- */
 .scroller {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* Clique do mouse: sem anel. Teclado (Tab): anel na cor de foco do tema, para a pessoa
+   saber que as setas já funcionam na lista. */
+.scroller:focus {
   outline: none;
+}
+
+.scroller:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 .spacer {
@@ -108,11 +231,56 @@
   gap: 2px;
 }
 
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .row-subject {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 18px;
+}
+
+/* "3 fora da main": na ponta de uma branch com commits que ainda não foram juntados */
+.ahead {
+  flex: none;
+  font-size: 0.8em;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--vg-c2-text);
+  background: color-mix(in srgb, var(--vg-c2) 15%, transparent);
+  white-space: nowrap;
+}
+
+/* Caminho destacado: o que não faz parte dele fica apagado */
+.row-text,
+.avatar,
+.node,
+.edge {
+  transition: opacity var(--vg-medium) var(--vg-ease);
+}
+
+.row.dim .row-text,
+.row.dim .avatar {
+  opacity: 0.38;
+}
+
+.edge-dim,
+.node-dim {
+  opacity: 0.18;
+}
+
+/* Trocando o filtro: a lista atual esmaece até a nova chegar */
+.layout.busy .scroller {
+  opacity: 0.55;
+  transition: opacity var(--vg-medium) var(--vg-ease);
 }
 
 .row-meta {
@@ -183,6 +351,15 @@
   stroke: var(--c);
   stroke-width: 1.5;
   opacity: 0.45;
+}
+
+/* Commit num trilho além do corte do grafo: setinha de "continua à direita" ao lado da bolinha */
+.node-more {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .row:hover .node-dot,

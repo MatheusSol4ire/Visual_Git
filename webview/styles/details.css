@@ -73,6 +73,48 @@ body {
   opacity: 0.8;
 }
 
+/* ---------------- Onde está este commit ---------------- */
+.placement {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.place-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  line-height: 1.45;
+  border-radius: var(--vg-radius);
+  --p: var(--vg-added);
+  background: color-mix(in srgb, var(--p) 10%, transparent);
+}
+
+.place-out {
+  --p: var(--vg-c2);
+}
+
+.place-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--p);
+}
+
+.place-branches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.place-branches .refs {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 /* ---------------- Mensagem completa ---------------- */
 .body {
   margin: 18px 0 0;
@@ -182,21 +224,25 @@ body {
   font-size: 11px;
   font-weight: 700;
   --s: var(--vg-modified);
-  color: var(--s);
+  --st: var(--vg-modified-text);
+  color: var(--st);
   background: color-mix(in srgb, var(--s) 15%, transparent);
 }
 
 .status-added {
   --s: var(--vg-added);
+  --st: var(--vg-added-text);
 }
 
 .status-deleted {
   --s: var(--vg-deleted);
+  --st: var(--vg-deleted-text);
 }
 
 .status-renamed,
 .status-copied {
   --s: var(--vg-renamed);
+  --st: var(--vg-renamed-text);
 }
 
 .file-path {
@@ -220,11 +266,11 @@ body {
 }
 
 .plus {
-  color: var(--vg-added);
+  color: var(--vg-added-text);
 }
 
 .minus {
-  color: var(--vg-deleted);
+  color: var(--vg-deleted-text);
 }
 
 .bar {

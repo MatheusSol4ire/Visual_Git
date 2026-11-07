@@ -20,6 +20,14 @@
   --vg-modified: #7aa2f7;
   --vg-renamed: #b09cf2;
 
+  /* Cor de TEXTO pequeno (selos, tag, letras A/M/D/R, +N/-N). No escuro é a mesma da linha;
+     no claro fica mais funda para passar de 4,5:1 (a linha do grafo só precisa de 3:1). */
+  --vg-c2-text: #e5b567;
+  --vg-added-text: #6fbf8a;
+  --vg-deleted-text: #ee7d86;
+  --vg-modified-text: #7aa2f7;
+  --vg-renamed-text: #b09cf2;
+
   /* Ritmo das animações: rápidas e suaves */
   --vg-fast: 120ms;
   --vg-medium: 200ms;
@@ -45,6 +53,12 @@ body.vscode-high-contrast-light {
   --vg-deleted: #c8414c;
   --vg-modified: #3e6fd8;
   --vg-renamed: #7556d4;
+
+  --vg-c2-text: #7a5200;
+  --vg-added-text: #22703c;
+  --vg-deleted-text: #b0303b;
+  --vg-modified-text: #2f5cc0;
+  --vg-renamed-text: #6243c0;
 }
 
 /* ---------------- Controle de animações ----------------
@@ -226,7 +240,7 @@ code,
 
 .ref-tag {
   border-color: color-mix(in srgb, var(--vg-c2) 55%, transparent);
-  color: var(--vg-c2);
+  color: var(--vg-c2-text);
 }
 
 .ref-current {
@@ -234,6 +248,21 @@ code,
   background: var(--vscode-badge-background);
   border-color: transparent;
   font-weight: 600;
+}
+
+.ref-pickable {
+  cursor: pointer;
+  transition: border-color var(--vg-fast) var(--vg-ease), background-color var(--vg-fast) var(--vg-ease);
+}
+
+.ref-pickable:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.ref-active {
+  border-style: solid;
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
 }
 
 .ref-icon {
@@ -262,6 +291,14 @@ code,
 
 .empty.error .empty-title {
   color: var(--vscode-errorForeground);
+}
+
+.empty a {
+  color: var(--vscode-textLink-foreground);
+}
+
+.empty a:hover {
+  color: var(--vscode-textLink-activeForeground);
 }
 
 .skeleton {

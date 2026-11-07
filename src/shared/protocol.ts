@@ -44,7 +44,59 @@ export interface CommitDetails extends Commit {
   totalFiles: number;
   /** Com qual commit as mudanças foram comparadas (o primeiro pai). `null` no primeiro commit. */
   comparedTo: string | null;
+  /** Em quais branches este commit aparece. `null` se não deu para descobrir. */
+  placement: CommitPlacement | null;
 }
+
+/** Onde um commit está: se já entrou na branch principal e em quais branches ele aparece. */
+export interface CommitPlacement {
+  /** Nome da branch principal (ex.: "main"), ou `null` se o projeto não tiver uma. */
+  baseName: string | null;
+  /** Se o commit já faz parte da branch principal. */
+  inBase: boolean;
+  /** Branches (locais e do servidor) que têm este commit. */
+  branches: Ref[];
+  /** Quantas branches têm o commit no total (`branches` pode vir cortada). */
+  totalBranches: number;
+}
+
+// ---------- Branches ----------
+
+export interface BranchInfo {
+  /** Nome completo, ex.: "refs/heads/main". É o identificador usado no filtro. */
+  ref: string;
+  /** Nome curto, ex.: "main" ou "origin/main". */
+  name: string;
+  type: 'branch' | 'remote';
+  /** Commit para onde a branch aponta. */
+  hash: string;
+  /** true quando é a branch em que você está agora. */
+  current: boolean;
+}
+
+/** Comparação de uma ponta de branch com a branch principal. */
+export interface BranchStatus {
+  /** Commits desta branch que ainda não estão na principal. */
+  ahead: number;
+  /** Commits da principal que esta branch ainda não tem. */
+  behind: number;
+}
+
+export interface RepoOverview {
+  /** A branch principal (main, master ou a padrão do servidor). Fica sempre no primeiro trilho do grafo. */
+  base: { name: string; ref: string; hash: string } | null;
+  branches: BranchInfo[];
+  /** Por hash da ponta de cada branch: quanto ela está à frente/atrás da principal. */
+  status: Record<string, BranchStatus>;
+}
+
+/** Quais branches a lista mostra. */
+export type CommitFilter =
+  | { kind: 'all' }
+  /** A branch atual junto com a principal. */
+  | { kind: 'current' }
+  /** Uma branch escolhida (pelo nome completo) junto com a principal. */
+  | { kind: 'branch'; ref: string };
 
 /** Como as animações devem se comportar na tela. */
 export type MotionMode = 'auto' | 'on' | 'off';
@@ -52,6 +104,8 @@ export type MotionMode = 'auto' | 'on' | 'off';
 export type RepoState =
   | { kind: 'noWorkspace' }
   | { kind: 'notRepo' }
+  /** O Git do projeto está numa pasta acima da aberta (`root`): só abrimos se o usuário aceitar. */
+  | { kind: 'parentRepo'; root: string }
   | { kind: 'gitMissing' }
   | { kind: 'empty'; repoName: string }
   | { kind: 'error'; message: string };
@@ -60,7 +114,8 @@ export type RepoState =
 
 export type ToCommitsView =
   | { type: 'settings'; motion: MotionMode }
-  | { type: 'state'; state: RepoState }
+  /** `gen` repete o número do pedido que deu neste estado (ausente quando não veio de um pedido). */
+  | { type: 'state'; state: RepoState; gen?: number }
   | {
       type: 'commits';
       repoName: string;
@@ -70,6 +125,12 @@ export type ToCommitsView =
       /** Posição do primeiro commit desta página (0 = começo da lista). */
       skip: number;
       hasMore: boolean;
+      /** Repete o número do pedido, para a tela descartar respostas de um filtro antigo. */
+      gen: number;
+      /** O filtro que foi aplicado de fato (volta para "todas" se a branch escolhida sumiu). */
+      filter: CommitFilter;
+      /** Branches e comparações com a principal. Só vem na primeira página. */
+      overview?: RepoOverview;
     }
   /** O repositório mudou (commit, troca de branch, fetch...). */
   | { type: 'changed' }
@@ -78,11 +139,15 @@ export type ToCommitsView =
 
 export type FromCommitsView =
   | { type: 'ready' }
-  | { type: 'loadMore'; skip: number }
-  /** Recarrega do começo mantendo pelo menos `count` commits. */
-  | { type: 'reload'; count: number }
+  /**
+   * Pede commits a partir de `skip`. Com `skip` 0 recarrega do começo trazendo pelo menos `count`.
+   * `gen` muda a cada troca de filtro e volta na resposta.
+   */
+  | { type: 'load'; gen: number; filter: CommitFilter; skip: number; count: number }
   | { type: 'openCommit'; hash: string }
-  | { type: 'openFolder' };
+  | { type: 'openFolder' }
+  /** Aceita o repositório da pasta acima. `always`: para todos os projetos (muda a configuração do Git). */
+  | { type: 'openParentRepo'; always: boolean };
 
 // ---------- Aba de detalhes do commit ----------
 

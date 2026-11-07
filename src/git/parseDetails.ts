@@ -1,10 +1,11 @@
 import type { FileChange, FileStatus } from '../shared/protocol.ts';
-import { parseRefs } from './parseLog.ts';
+import { isFullHash, parseParents, parseRefs } from './parseLog.ts';
 
-const FIELD = '\x1f';
+// NUL: o Git nunca o coloca em nomes ou mensagens, então um texto do repositório não desloca os campos.
+const FIELD = '\0';
 
 /** Formato do `git show -s` para os detalhes. A ordem precisa bater com `parseShow`. */
-export const SHOW_FORMAT = ['%H', '%P', '%an', '%ae', '%aI', '%cn', '%cI', '%D', '%B'].join('%x1f');
+export const SHOW_FORMAT = ['%H', '%P', '%an', '%ae', '%aI', '%cn', '%cI', '%D', '%B'].join('%x00');
 
 export interface ShowInfo {
   hash: string;
@@ -22,8 +23,10 @@ export interface ShowInfo {
 export function parseShow(raw: string): ShowInfo | undefined {
   const fields = raw.replace(/^[\r\n]+/, '').split(FIELD);
   if (fields.length < 9) return undefined;
-  const [hash, parents, authorName, authorEmail, date, committerName, committerDate, decorations, ...messageParts] = fields;
-  if (!hash) return undefined;
+  const [hash = '', parentList = '', authorName, authorEmail, date, committerName, committerDate, decorations, ...messageParts] = fields;
+  // Hash e pais vão para outros comandos do Git: só aceitamos hashes completos de verdade.
+  const parents = parseParents(parentList);
+  if (!isFullHash(hash) || !parents) return undefined;
 
   const message = messageParts.join(FIELD).replace(/\r\n/g, '\n').trimEnd();
   const newline = message.indexOf('\n');
@@ -32,7 +35,7 @@ export function parseShow(raw: string): ShowInfo | undefined {
 
   return {
     hash,
-    parents: parents ? parents.split(' ').filter(Boolean) : [],
+    parents,
     authorName: authorName ?? '',
     authorEmail: authorEmail ?? '',
     date: date ?? '',

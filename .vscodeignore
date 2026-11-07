@@ -1,10 +1,14 @@
 # Tudo que NÃO entra no arquivo .vsix (a extensão instalável).
-# Só vão: dist/, package.json, README.md, LICENSE, CHANGELOG.md e media/.
+# Só vão: os .js/.cjs/.css de dist/, package.json, README.md, LICENSE, CHANGELOG.md e media/.
+# Atenção: o vsce põe no pacote qualquer arquivo que bata com uma linha "!", mesmo que outra
+# linha o exclua depois. Por isso dist/ é listado por tipo — os .map (código-fonte completo)
+# nunca batem com nenhuma linha "!" e ficam de fora.
 **
-!dist/**
+!dist/*.js
+!dist/*.cjs
+!dist/*.css
 !media/**
 !package.json
 !README.md
 !LICENSE
 !CHANGELOG.md
-dist/**/*.map

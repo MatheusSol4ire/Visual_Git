@@ -1,22 +1,59 @@
 import { render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
-import type { CommitDetails, FileChange, FileStatus, FromDetailsView, ToDetailsView } from '../../src/shared/protocol.ts';
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
+import type { CommitDetails, CommitPlacement, FileChange, FileStatus, FromDetailsView, ToDetailsView } from '../../src/shared/protocol.ts';
 import { Avatar, RefChips } from '../shared/components.tsx';
 import { fullDate, plural, shortHash, timeAgo } from '../shared/format.ts';
-import { applyMotion, getVsCode } from '../shared/vscode.ts';
+import { parseSavedDetails } from '../shared/savedState.ts';
+import { isToDetailsView } from '../shared/messages.ts';
+import { applyMotion, getVsCode, onHostMessage } from '../shared/vscode.ts';
 import '../styles/base.css';
 import '../styles/details.css';
 
 const vscode = getVsCode<FromDetailsView>();
 
-type View = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'details'; details: CommitDetails };
+// Escondida atrás de outra aba (ex.: o "antes e depois" de um arquivo), esta tela é destruída e
+// recriada ao voltar. Guardamos qual commit estava aberto e a rolagem, para voltar ao mesmo lugar.
+const saved = parseSavedDetails(vscode.getState());
+/** Commit cuja rolagem salva ainda não foi restaurada (vale uma vez só). */
+let pendingRestore = saved.hash;
+let shownHash: string | null = null;
+/**
+ * A pessoa foi para outro commit pelos botões desta aba ("Commit anterior"): o botão some com a troca,
+ * então o foco vai para o título do commit novo (o leitor de tela lê o assunto e o Tab segue dali).
+ */
+let focusNext = false;
+/** Ref de elemento que recebe o foco depois de uma navegação pela aba. */
+const takeFocus = (element: HTMLElement | null) => {
+  if (!element || !focusNext) return;
+  focusNext = false;
+  element.focus();
+};
+let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+
+const scroller = () => document.scrollingElement ?? document.documentElement;
+const rememberScroll = () => {
+  if (shownHash) vscode.setState({ hash: shownHash, scrollTop: Math.round(scroller().scrollTop) });
+};
+window.addEventListener(
+  'scroll',
+  () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(rememberScroll, 150);
+  },
+  true,
+);
+
+type View =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  /** `restored`: o mesmo commit que estava aberto antes de a tela ser recriada. */
+  | { kind: 'details'; details: CommitDetails; restored: boolean };
 
 function App() {
   const [view, setView] = useState<View>({ kind: 'loading' });
 
   useEffect(() => {
-    const onMessage = (event: MessageEvent<ToDetailsView>) => {
-      const message = event.data;
+    const onMessage = (message: ToDetailsView) => {
       switch (message.type) {
         case 'settings':
           applyMotion(message.motion);
@@ -24,17 +61,25 @@ function App() {
         case 'loading':
           setView((current) => (current.kind === 'details' && current.details.hash === message.hash ? current : { kind: 'loading' }));
           break;
-        case 'details':
-          setView({ kind: 'details', details: message.details });
+        case 'details': {
+          const restored = pendingRestore === message.details.hash;
+          pendingRestore = null;
+          setView((current) =>
+            // Recarga do mesmo commit (o repositório mudou): mantém o "voltou sem animação" se já era.
+            current.kind === 'details' && current.details.hash === message.details.hash
+              ? { ...current, details: message.details }
+              : { kind: 'details', details: message.details, restored },
+          );
           break;
+        }
         case 'error':
           setView({ kind: 'error', message: message.message });
           break;
       }
     };
-    window.addEventListener('message', onMessage);
+    const stop = onHostMessage(isToDetailsView, onMessage);
     vscode.postMessage({ type: 'ready' });
-    return () => window.removeEventListener('message', onMessage);
+    return stop;
   }, []);
 
   if (view.kind === 'loading') return <Skeleton />;
@@ -43,21 +88,40 @@ function App() {
       <div class="empty error">
         <span class="empty-title">Não foi possível abrir este commit</span>
         <span>{view.message}</span>
+        <button
+          type="button"
+          ref={takeFocus}
+          onClick={() => {
+            setView({ kind: 'loading' });
+            // O "ready" faz a extensão mandar de novo o commit desta aba (lendo do Git se preciso).
+            vscode.postMessage({ type: 'ready' });
+          }}
+        >
+          Tentar de novo
+        </button>
       </div>
     );
   }
   // A key faz a animação de entrada rodar de novo a cada commit aberto.
-  return <Details key={view.details.hash} details={view.details} />;
+  return <Details key={view.details.hash} details={view.details} restored={view.restored} />;
 }
 
-function Details({ details }: { details: CommitDetails }) {
+function Details({ details, restored }: { details: CommitDetails; restored: boolean }) {
   const sameCommitter = details.committerName === details.authorName;
   const isMerge = details.parents.length > 1;
 
+  useLayoutEffect(() => {
+    shownHash = details.hash;
+    if (restored && saved.scrollTop > 0) scroller().scrollTop = saved.scrollTop;
+    rememberScroll();
+  }, []);
+
   return (
-    <main class="page">
+    <main class="page" style={restored ? { animation: 'none' } : undefined}>
       <header class="hero">
-        <h1 class="title">{details.subject || <span class="muted">(sem mensagem)</span>}</h1>
+        <h1 class="title" tabIndex={-1} ref={takeFocus}>
+          {details.subject || <span class="muted">(sem mensagem)</span>}
+        </h1>
         <RefChips refs={details.refs} />
       </header>
 
@@ -78,6 +142,8 @@ function Details({ details }: { details: CommitDetails }) {
         </button>
       </section>
 
+      {details.placement && <Placement placement={details.placement} />}
+
       {details.body && <pre class="body">{details.body}</pre>}
 
       <section class="lineage">
@@ -91,7 +157,10 @@ function Details({ details }: { details: CommitDetails }) {
             type="button"
             class="ghost parent mono"
             title="Abrir este commit"
-            onClick={() => vscode.postMessage({ type: 'openCommit', hash: parent })}
+            onClick={() => {
+              focusNext = true;
+              vscode.postMessage({ type: 'openCommit', hash: parent });
+            }}
           >
             {shortHash(parent)}
           </button>
@@ -105,8 +174,44 @@ function Details({ details }: { details: CommitDetails }) {
         </p>
       )}
 
-      <FileList details={details} />
+      <FileList details={details} restored={restored} />
     </main>
+  );
+}
+
+/** Se o commit já entrou na branch principal e em quais branches ele aparece. */
+function Placement({ placement }: { placement: CommitPlacement }) {
+  const { baseName, inBase, branches, totalBranches } = placement;
+  return (
+    <section class="placement">
+      {baseName && (
+        <div class={inBase ? 'place-status place-in' : 'place-status place-out'}>
+          {inBase ? <CheckIcon /> : <PendingIcon />}
+          {inBase ? (
+            <span>
+              Este commit já está na <strong>{baseName}</strong>.
+            </span>
+          ) : (
+            <span>
+              Este commit <strong>ainda não está</strong> na <strong>{baseName}</strong>.
+            </span>
+          )}
+        </div>
+      )}
+      <div class="place-branches">
+        {branches.length === 0 ? (
+          <span class="muted">Ele não está em nenhuma branch.</span>
+        ) : (
+          <>
+            <span class="muted">Aparece em:</span>
+            <RefChips refs={branches} />
+            {totalBranches > branches.length && (
+              <span class="muted small">e mais {plural(totalBranches - branches.length, 'branch', 'branches')}</span>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -120,7 +225,7 @@ const STATUS: Record<FileStatus, { letter: string; label: string }> = {
   other: { letter: '?', label: 'Outra mudança' },
 };
 
-function FileList({ details }: { details: CommitDetails }) {
+function FileList({ details, restored }: { details: CommitDetails; restored: boolean }) {
   const { files, totalFiles } = details;
   const additions = files.reduce((sum, f) => sum + (f.additions ?? 0), 0);
   const deletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
@@ -142,7 +247,7 @@ function FileList({ details }: { details: CommitDetails }) {
           <p class="hint muted small">Clique num arquivo para ver o antes e depois.</p>
           <ul class="file-list">
             {files.map((file, index) => (
-              <FileRow key={file.path} file={file} index={index} />
+              <FileRow key={file.path} file={file} index={index} restored={restored} />
             ))}
           </ul>
         </>
@@ -155,14 +260,14 @@ function FileList({ details }: { details: CommitDetails }) {
   );
 }
 
-function FileRow({ file, index }: { file: FileChange; index: number }) {
+function FileRow({ file, index, restored }: { file: FileChange; index: number; restored: boolean }) {
   const status = STATUS[file.status];
   const slash = file.path.lastIndexOf('/');
   const name = file.path.slice(slash + 1);
   const dir = slash === -1 ? '' : file.path.slice(0, slash + 1);
 
   return (
-    <li class="file" style={{ animationDelay: `${Math.min(index, 20) * 18}ms` }}>
+    <li class="file" style={restored ? { animation: 'none' } : { animationDelay: `${Math.min(index, 20) * 18}ms` }}>
       <button type="button" class="file-button" onClick={() => vscode.postMessage({ type: 'openFile', index })} title={`${status.label}: ${file.path}`}>
         <span class={`status status-${file.status}`} aria-label={status.label}>
           {status.letter}
@@ -205,6 +310,24 @@ function Skeleton() {
         <span key={i} class="skeleton" style={{ display: 'block', width: `${90 - i * 10}%`, height: '12px', marginBottom: '12px' }} />
       ))}
     </main>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg class="place-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.3" />
+      <path d="M5.3 8.2l1.9 1.9 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  );
+}
+
+function PendingIcon() {
+  return (
+    <svg class="place-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2" />
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+    </svg>
   );
 }
 

@@ -6,7 +6,7 @@ import { CommitsViewProvider } from './views/CommitsViewProvider.ts';
 /** Chamado pelo VS Code quando a extensão é usada pela primeira vez. */
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel('Visual Git');
-  const repos = new RepoService(log);
+  const repos = new RepoService(log, context.workspaceState);
 
   // A lista e a aba de detalhes conversam: clicar na lista abre os detalhes;
   // navegar nos detalhes (ex.: para o commit pai) destaca o commit na lista.

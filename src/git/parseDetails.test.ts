@@ -2,22 +2,41 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFileChanges, parseShow } from './parseDetails.ts';
 
-const F = '\x1f';
+const F = '\0';
+const H = 'a'.repeat(40);
+const P1 = '1'.repeat(40);
+const P2 = '2'.repeat(40);
 
 test('separa assunto e corpo da mensagem', () => {
-  const raw = ['abc', 'p1 p2', 'Ana', 'a@ex.com', '2026-01-01T00:00:00Z', 'Bia', '2026-01-02T00:00:00Z', 'tag: refs/tags/v1', 'Título\n\nCorpo linha 1\nCorpo linha 2\n'].join(F);
+  const raw = [H, `${P1} ${P2}`, 'Ana', 'a@ex.com', '2026-01-01T00:00:00Z', 'Bia', '2026-01-02T00:00:00Z', 'tag: refs/tags/v1', 'Título\n\nCorpo linha 1\nCorpo linha 2\n'].join(F);
   const info = parseShow(raw);
   assert.equal(info?.subject, 'Título');
   assert.equal(info?.body, 'Corpo linha 1\nCorpo linha 2');
-  assert.deepEqual(info?.parents, ['p1', 'p2']);
+  assert.deepEqual(info?.parents, [P1, P2]);
   assert.deepEqual(info?.refs, [{ name: 'v1', type: 'tag' }]);
   assert.equal(info?.committerName, 'Bia');
 });
 
 test('mensagem de uma linha só tem corpo vazio', () => {
-  const raw = ['abc', '', 'Ana', 'a@ex.com', 'd', 'Ana', 'd', '', 'Só o título\n'].join(F);
+  const raw = [H, '', 'Ana', 'a@ex.com', 'd', 'Ana', 'd', '', 'Só o título\n'].join(F);
   assert.equal(parseShow(raw)?.body, '');
   assert.equal(parseShow(raw)?.subject, 'Só o título');
+});
+
+test('recusa hash ou pais que não são hashes completos', () => {
+  const show = (hash: string, parents: string) => [hash, parents, 'Ana', 'a@ex.com', 'd', 'Ana', 'd', '', 'x'].join(F);
+  assert.equal(parseShow(show('conteúdo de um arquivo', '')), undefined);
+  assert.equal(parseShow(show(H, '--output=/tmp/x')), undefined);
+  assert.equal(parseShow(show(H, `${P1} abc`)), undefined);
+  assert.ok(parseShow(show(H, P1)));
+});
+
+test('separador antigo (\\x1f) no nome do autor não desloca os campos', () => {
+  const raw = [H, '', 'Ana\x1fFalsa', 'a@ex.com', '2026-01-01T00:00:00Z', 'Bia', '2026-01-02T00:00:00Z', '', 'Título'].join(F);
+  const info = parseShow(raw);
+  assert.equal(info?.authorName, 'Ana\x1fFalsa');
+  assert.equal(info?.date, '2026-01-01T00:00:00Z');
+  assert.equal(info?.subject, 'Título');
 });
 
 test('junta status e contagem de linhas, incluindo renomeação e binário', () => {

@@ -21,8 +21,17 @@ A lista se atualiza sozinha quando você faz um commit, troca de branch ou baixa
 | Etiqueta destacada | A branch em que você está |
 | Etiqueta com nuvem | Branch que está no servidor (ex.: GitHub) |
 | Etiqueta com marcador | Versão (tag) |
+| Etiqueta "3 fora da main" | Commits desta branch que ainda não foram juntados na branch principal |
 
-Navegação pelo teclado: `↑` `↓` para escolher, `Enter` para abrir.
+### Branches
+
+- **A branch principal fica sempre à esquerda**, em azul. As outras branches saem dela e, quando são juntadas (merge), voltam para ela. A principal é a branch padrão do servidor; se não houver uma, `main` ou `master`.
+- **No topo**, uma frase avisa quando a sua branch tem commits que ainda não estão na principal (ou quando a principal tem novidades que a sua branch não tem).
+- **Destacar um caminho:** clique numa etiqueta de branch para acender só o histórico dela; o resto fica apagado. Clique de novo, em **Limpar** ou aperte `Esc` para voltar.
+- **Mostrar:** escolha ver todas as branches, só a sua branch com a principal, ou uma branch específica com a principal.
+- **Na aba de detalhes**, cada commit diz se já está na principal e em quais branches ele aparece.
+
+Navegação pelo teclado: `↑` `↓` para escolher, `Enter` para abrir, `Esc` para parar de destacar.
 
 ### Animações
 
@@ -34,9 +43,15 @@ As animações podem ser ligadas ou desligadas em **Configurações → Visual G
 | `on` | Sempre ligadas |
 | `off` | Sempre desligadas |
 
+### Git numa pasta acima
+
+Se a pasta aberta fica dentro de outro projeto com Git, o Visual Git pergunta antes de mostrar o histórico dele.
+O botão **Sempre abrir sem perguntar** muda só a configuração **Visual Git → Parent Folder Repos** (`ask` / `always`),
+nunca a do Git do VS Code. Se `git.openRepositoryInParentFolders` estiver em `never`, ele continua valendo.
+
 ## Desenvolvendo
 
-Requisitos: [Node.js](https://nodejs.org) 22 ou mais novo, [Git](https://git-scm.com) e o VS Code.
+Requisitos: [Node.js](https://nodejs.org) 22.18 ou mais novo, [Git](https://git-scm.com) e o VS Code.
 
 ```bash
 npm install        # instala as dependências
