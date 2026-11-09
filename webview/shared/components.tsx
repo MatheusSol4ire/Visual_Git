@@ -1,12 +1,12 @@
 import type { Ref } from '../../src/shared/protocol.ts';
 import { PALETTE_SIZE } from '../graph/layout.ts';
-import { colorIndexFor, initials } from './format.ts';
+import { colorIndexFor, initials, isolate, showControls } from './format.ts';
 
 /** Bolinha com as iniciais da pessoa. Funciona 100% offline. */
 export function Avatar({ name, email, size = 'md' }: { name: string; email: string; size?: 'md' | 'lg' }) {
   const color = colorIndexFor(email || name, PALETTE_SIZE);
   return (
-    <span class={`avatar avatar-${size}`} style={{ '--c': `var(--vg-c${color})` }} title={name} aria-hidden="true">
+    <span class={`avatar avatar-${size}`} style={{ '--c': `var(--vg-c${color})` }} title={showControls(name)} aria-hidden="true">
       {initials(name)}
     </span>
   );
@@ -16,12 +16,15 @@ const REF_LABEL: Record<Ref['type'], string> = {
   branch: 'Branch',
   remote: 'Branch no servidor',
   tag: 'Versão (tag)',
-  head: 'Você está neste commit',
+  head: 'Você está neste commit, fora de qualquer branch',
 };
+
+/** No lugar do "HEAD" cru do Git (HEAD solto: o commit atual não está em nenhuma branch). */
+const HEAD_TEXT = 'você está aqui';
 
 interface RefChipsProps {
   refs: Ref[];
-  /** Clique numa etiqueta (ex.: para destacar o caminho da branch). */
+  /** Clique numa etiqueta (ex.: para destacar os commits da branch). */
   onPick?: (ref: Ref) => void;
   /** Mouse entrou (ref) ou saiu (null) de uma etiqueta. */
   onHover?: (ref: Ref | null) => void;
@@ -36,6 +39,8 @@ export function RefChips({ refs, onPick, onHover, active }: RefChipsProps) {
     <span class="refs">
       {refs.map((ref) => {
         const tip = ref.current ? 'Você está nesta branch' : REF_LABEL[ref.type];
+        // O "HEAD" não é um nome que a pessoa criou: a dica já diz tudo, sem repetir o nome.
+        const label = ref.type === 'head' ? tip : `${tip}: ${isolate(ref.name)}`;
         const classes = ['ref', `ref-${ref.type}`];
         if (ref.current) classes.push('ref-current');
         if (onPick) classes.push('ref-pickable');
@@ -44,7 +49,7 @@ export function RefChips({ refs, onPick, onHover, active }: RefChipsProps) {
           <span
             key={ref.type + ref.name}
             class={classes.join(' ')}
-            title={onPick ? `${tip}: ${ref.name}\nClique para destacar o caminho` : `${tip}: ${ref.name}`}
+            title={onPick ? `${label}\nClique para ver quais commits fazem parte desta branch` : label}
             onClick={
               onPick &&
               ((event) => {
@@ -57,7 +62,9 @@ export function RefChips({ refs, onPick, onHover, active }: RefChipsProps) {
           >
             {ref.type === 'tag' && <TagIcon />}
             {ref.type === 'remote' && <CloudIcon />}
-            {ref.name}
+            {/* O tipo (e o "você está aqui") só aparece na dica e na cor; o leitor de tela lê a mesma dica. */}
+            <span class="sr-only">{tip}: </span>
+            <span class="ref-name">{ref.type === 'head' ? HEAD_TEXT : showControls(ref.name)}</span>
           </span>
         );
       })}

@@ -11,7 +11,8 @@
     "url": "https://github.com/MatheusSol4ire/Visual_Git.git"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.90.0",
+    "node": ">=22.18.0"
   },
   "categories": [
     "SCM Providers",
@@ -22,7 +23,11 @@
     "graph",
     "history",
     "commits",
-    "visual"
+    "visual",
+    "histórico",
+    "grafo",
+    "iniciante",
+    "visualizar"
   ],
   "type": "module",
   "main": "./dist/extension.cjs",
@@ -56,7 +61,7 @@
     "commands": [
       {
         "command": "visualGit.open",
-        "title": "Abrir",
+        "title": "Mostrar histórico de commits",
         "category": "Visual Git"
       },
       {
@@ -85,8 +90,13 @@
             "on",
             "off"
           ],
+          "enumItemLabels": [
+            "Automático",
+            "Sempre ligadas",
+            "Sempre desligadas"
+          ],
           "enumDescriptions": [
-            "Segue a configuração do VS Code (workbench.reduceMotion) e do sistema operacional.",
+            "Segue o VS Code (configuração \"Reduzir movimento\") e o sistema operacional.",
             "Animações sempre ligadas.",
             "Animações sempre desligadas."
           ],
@@ -98,6 +108,10 @@
           "enum": [
             "ask",
             "always"
+          ],
+          "enumItemLabels": [
+            "Perguntar",
+            "Sempre mostrar"
           ],
           "enumDescriptions": [
             "Pergunta antes de mostrar o histórico de um Git que está numa pasta acima da aberta.",

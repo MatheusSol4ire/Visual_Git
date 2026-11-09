@@ -1,4 +1,5 @@
-import { fitRow, type GraphRow, type Segment } from './layout.ts';
+import { Component } from 'preact';
+import { fitRow, splitThrough, type GraphRow, type Segment } from './layout.ts';
 
 export const LANE_WIDTH = 14;
 const PADDING = 6;
@@ -32,24 +33,56 @@ interface GraphCellProps {
   inPath: boolean;
 }
 
-/** O pedaço do grafo de uma linha da lista. As linhas de cima e de baixo se encaixam com as vizinhas. */
-export function GraphCell({ row, lanes, height, isHead, lit, inPath }: GraphCellProps) {
+/**
+ * O pedaço do grafo de uma linha da lista. As linhas de cima e de baixo se encaixam com as vizinhas.
+ * Só redesenha quando alguma propriedade muda: rolar a lista muda a posição das linhas, não o grafo
+ * delas (sem isso, cada evento de rolagem refazia todos os `<path>` das ~46 linhas da tela).
+ */
+export class GraphCell extends Component<GraphCellProps> {
+  override shouldComponentUpdate(next: GraphCellProps): boolean {
+    const now = this.props;
+    return (
+      next.row !== now.row ||
+      next.lanes !== now.lanes ||
+      next.height !== now.height ||
+      next.isHead !== now.isHead ||
+      next.lit !== now.lit ||
+      next.inPath !== now.inPath
+    );
+  }
+
+  override render(props: GraphCellProps) {
+    return drawGraphCell(props);
+  }
+}
+
+function drawGraphCell({ row, lanes, height, isHead, lit, inPath }: GraphCellProps) {
   const middle = height / 2;
   const width = graphWidth(lanes);
   // Commit num trilho além do corte: a bolinha fica na borda, com uma setinha de "continua à direita".
-  const { col, top, bottom, overflow } = fitRow(row, lanes);
+  const fitted = fitRow(row, lanes);
+  const { col, overflow } = fitted;
+  // Ligação com as duas pontas além do corte nunca aparece (`overflow: hidden`): nem vira `<path>`.
+  const shown = (segment: Segment) => segment.from < lanes || segment.to < lanes;
+  // Trilho que só atravessa a linha vira um traço só (em duas metades, o meio ficava com um pontinho
+  // mais claro quando o caminho está apagado).
+  const { through, top, bottom } = splitThrough(fitted.top.filter(shown), fitted.bottom.filter(shown), col);
   const cx = x(col);
   // Uma ligação faz parte do caminho quando o commit de cima dela faz (o de baixo é antecessor dele).
-  const edgeClass = (segment: Segment) => (lit && !lit.has(segment.child) ? 'edge edge-dim' : 'edge');
+  // A cor vem de uma classe (`.edge.c3` → --vg-c3), sem um objeto `style` por `<path>`.
+  const edgeClass = (segment: Segment) => `edge c${segment.color}${lit && !lit.has(segment.child) ? ' edge-dim' : ''}`;
 
   return (
     <svg class="graph" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       {overflow && <title>Há muitas branches em paralelo: parte do desenho foi recolhida à direita.</title>}
+      {through.map((segment, i) => (
+        <path key={`p${i}`} d={path(segment, 0, height)} class={edgeClass(segment)} />
+      ))}
       {top.map((segment, i) => (
-        <path key={`t${i}`} d={path(segment, 0, middle)} class={edgeClass(segment)} style={{ stroke: `var(--vg-c${segment.color})` }} />
+        <path key={`t${i}`} d={path(segment, 0, middle)} class={edgeClass(segment)} />
       ))}
       {bottom.map((segment, i) => (
-        <path key={`b${i}`} d={path(segment, middle, height)} class={edgeClass(segment)} style={{ stroke: `var(--vg-c${segment.color})` }} />
+        <path key={`b${i}`} d={path(segment, middle, height)} class={edgeClass(segment)} />
       ))}
       <g class={lit && !inPath ? 'node node-dim' : 'node'} style={{ '--c': `var(--vg-c${row.color})` }}>
         {isHead && <circle class="node-halo" cx={cx} cy={middle} r={NODE_RADIUS + 3.5} />}

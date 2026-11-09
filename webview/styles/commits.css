@@ -18,7 +18,11 @@
   animation: vg-fade var(--vg-medium) var(--vg-ease) both;
 }
 
+/* O nome do projeto não encolhe por causa de uma branch de nome longo: a branch encolhe primeiro
+   (sempre sobram ~80px para ela). */
 .header-repo {
+  flex-shrink: 0;
+  max-width: calc(100% - 80px);
   font-weight: 600;
   min-width: 0;
   overflow: hidden;
@@ -32,10 +36,17 @@
   gap: 4px;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.9em;
   color: var(--vscode-descriptionForeground);
+}
+
+/* Como em .ref-name: o "…" precisa de um item próprio dentro do inline-flex. */
+.header-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .branch-icon {
@@ -88,11 +99,6 @@
   border-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
 }
 
-.filter:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
-}
-
 .filter option,
 .filter optgroup {
   color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
@@ -112,6 +118,7 @@
 
 /* ---------------- Avisos do topo ---------------- */
 .summary,
+.lost-branch,
 .highlight-bar {
   flex: none;
   display: flex;
@@ -143,12 +150,19 @@
   background: color-mix(in srgb, var(--vscode-focusBorder) 14%, transparent);
 }
 
-.highlight-text {
+/* A branch escolhida em "Mostrar" sumiu: aviso com "OK". */
+.lost-branch {
+  align-items: center;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, var(--vg-c2)) 13%, transparent);
+}
+
+/* A frase quebra em mais linhas na barra estreita; um nome comprido sem espaços quebra no meio. */
+.highlight-text,
+.lost-branch-text {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .small-button {
@@ -183,7 +197,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 44px;
+  height: var(--vg-row); /* ROW_HEIGHT em commits/main.tsx (único lugar com o número) */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -205,6 +219,15 @@
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground, inherit);
   outline: 1px solid var(--vscode-list-focusOutline, transparent);
+  outline-offset: -1px;
+}
+
+/* Alto contraste (escuro e claro; o claro também recebe .vscode-high-contrast): o Dark High Contrast
+   não define fundo de seleção, então sem foco na lista a linha do commit aberto ficava igual às outras.
+   Como nas listas nativas: contorno tracejado sem foco; com foco vale o contorno sólido da regra acima
+   (mais específica). */
+body.vscode-high-contrast .row.selected {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
   outline-offset: -1px;
 }
 
@@ -310,7 +333,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 44px;
+  height: var(--vg-row);
   display: grid;
   place-items: center;
   font-size: 0.9em;
@@ -329,6 +352,16 @@
   stroke-width: 2;
   stroke-linecap: round;
 }
+
+/* Cor de cada ligação: índice da paleta (0..7, ver PALETTE_SIZE em layout.ts) */
+.edge.c0 { stroke: var(--vg-c0); }
+.edge.c1 { stroke: var(--vg-c1); }
+.edge.c2 { stroke: var(--vg-c2); }
+.edge.c3 { stroke: var(--vg-c3); }
+.edge.c4 { stroke: var(--vg-c4); }
+.edge.c5 { stroke: var(--vg-c5); }
+.edge.c6 { stroke: var(--vg-c6); }
+.edge.c7 { stroke: var(--vg-c7); }
 
 .node-dot {
   fill: var(--c);
@@ -372,7 +405,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 44px;
+  height: var(--vg-row);
   padding: 0 12px;
   animation: vg-fade var(--vg-medium) var(--vg-ease) both;
 }

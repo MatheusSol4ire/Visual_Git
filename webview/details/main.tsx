@@ -2,8 +2,9 @@ import { render } from 'preact';
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import type { CommitDetails, CommitPlacement, FileChange, FileStatus, FromDetailsView, ToDetailsView } from '../../src/shared/protocol.ts';
 import { Avatar, RefChips } from '../shared/components.tsx';
-import { fullDate, plural, shortHash, timeAgo } from '../shared/format.ts';
+import { formatCount, fullDate, isolate, plural, shortHash, showControls, timeAgo } from '../shared/format.ts';
 import { parseSavedDetails } from '../shared/savedState.ts';
+import { useNow } from '../shared/clock.ts';
 import { isToDetailsView } from '../shared/messages.ts';
 import { applyMotion, getVsCode, onHostMessage } from '../shared/vscode.ts';
 import '../styles/base.css';
@@ -107,6 +108,7 @@ function App() {
 }
 
 function Details({ details, restored }: { details: CommitDetails; restored: boolean }) {
+  const now = useNow();
   const sameCommitter = details.committerName === details.authorName;
   const isMerge = details.parents.length > 1;
 
@@ -129,17 +131,22 @@ function Details({ details, restored }: { details: CommitDetails; restored: bool
         <Avatar name={details.authorName} email={details.authorEmail} size="lg" />
         <div class="meta-text">
           <div>
-            <strong>{details.authorName}</strong> <span class="muted">fez este commit {timeAgo(details.date)}</span>
+            <strong>
+              <bdi>{showControls(details.authorName)}</bdi>
+            </strong>{' '}
+            <span class="muted">fez este commit {timeAgo(details.date, now)}</span>
           </div>
           <div class="muted small">
             {fullDate(details.date)}
-            {!sameCommitter && ` · aplicado por ${details.committerName}`}
+            {!sameCommitter && (
+              <>
+                {' · aplicado por '}
+                <bdi>{showControls(details.committerName)}</bdi>
+              </>
+            )}
           </div>
         </div>
-        <button type="button" class="hash" title="Copiar o código completo deste commit" onClick={() => vscode.postMessage({ type: 'copyHash' })}>
-          <span class="mono">{shortHash(details.hash)}</span>
-          <CopyIcon />
-        </button>
+        <CopyHashButton hash={details.hash} />
       </section>
 
       {details.placement && <Placement placement={details.placement} />}
@@ -148,29 +155,31 @@ function Details({ details, restored }: { details: CommitDetails; restored: bool
 
       <section class="lineage">
         {details.parents.length === 0 && <span class="muted">Este é o primeiro commit do projeto.</span>}
-        {details.parents.length > 0 && (
-          <span class="muted">{isMerge ? 'Junta os commits:' : 'Commit anterior:'}</span>
-        )}
-        {details.parents.map((parent) => (
-          <button
-            key={parent}
-            type="button"
-            class="ghost parent mono"
-            title="Abrir este commit"
-            onClick={() => {
-              focusNext = true;
-              vscode.postMessage({ type: 'openCommit', hash: parent });
-            }}
-          >
-            {shortHash(parent)}
-          </button>
+        {/* No merge, um rótulo por pai: o 1º é o commit anterior na branch onde o merge foi feito; os outros vieram de outra branch. */}
+        {details.parents.map((parent, index) => (
+          <div key={parent} class="lineage-row">
+            <span class="muted">
+              {!isMerge ? 'Commit anterior:' : index === 0 ? 'Commit anterior nesta branch:' : 'Trazido de outra branch:'}
+            </span>
+            <button
+              type="button"
+              class="ghost parent mono"
+              title="Abrir este commit"
+              onClick={() => {
+                focusNext = true;
+                vscode.postMessage({ type: 'openCommit', hash: parent });
+              }}
+            >
+              {shortHash(parent)}
+            </button>
+          </div>
         ))}
       </section>
 
       {isMerge && (
         <p class="note">
-          Este commit é uma <strong>junção (merge)</strong>: ele une duas linhas de trabalho. As mudanças abaixo
-          comparam com o primeiro commit anterior ({shortHash(details.comparedTo ?? '')}).
+          Este commit é uma <strong>junção (merge)</strong>: ele traz o trabalho de outra branch para esta. A lista abaixo
+          mostra o que mudou nesta branch com o merge (comparando com {shortHash(details.comparedTo ?? '')}).
         </p>
       )}
 
@@ -189,11 +198,19 @@ function Placement({ placement }: { placement: CommitPlacement }) {
           {inBase ? <CheckIcon /> : <PendingIcon />}
           {inBase ? (
             <span>
-              Este commit já está na <strong>{baseName}</strong>.
+              Este commit já está na{' '}
+              <strong>
+                <bdi>{showControls(baseName)}</bdi>
+              </strong>
+              .
             </span>
           ) : (
             <span>
-              Este commit <strong>ainda não está</strong> na <strong>{baseName}</strong>.
+              Este commit <strong>ainda não está</strong> na{' '}
+              <strong>
+                <bdi>{showControls(baseName)}</bdi>
+              </strong>
+              .
             </span>
           )}
         </div>
@@ -227,16 +244,24 @@ const STATUS: Record<FileStatus, { letter: string; label: string }> = {
 
 function FileList({ details, restored }: { details: CommitDetails; restored: boolean }) {
   const { files, totalFiles } = details;
-  const additions = files.reduce((sum, f) => sum + (f.additions ?? 0), 0);
-  const deletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
+  const counted = !details.uncounted;
+  // Somados pela extensão em todos os arquivos do commit (a lista pode vir cortada em 500).
+  const additions = details.totalAdditions;
+  const deletions = details.totalDeletions;
 
   return (
     <section class="files">
       <div class="files-header">
         <h2>Arquivos alterados</h2>
         <span class="muted">
-          {plural(totalFiles, 'arquivo', 'arquivos')} · <span class="plus">+{additions}</span>{' '}
-          <span class="minus">−{deletions}</span>
+          {/* Números com separador de milhar ("1.834 arquivos · +45.210 −95"), como em `plural`. */}
+          {plural(totalFiles, 'arquivo', 'arquivos')}
+          {counted && (
+            <>
+              {' · '}
+              <span class="plus">+{formatCount(additions)}</span> <span class="minus">−{formatCount(deletions)}</span>
+            </>
+          )}
         </span>
       </div>
 
@@ -245,9 +270,10 @@ function FileList({ details, restored }: { details: CommitDetails; restored: boo
       ) : (
         <>
           <p class="hint muted small">Clique num arquivo para ver o antes e depois.</p>
+          {!counted && <p class="hint muted small">As linhas adicionadas e removidas não foram contadas neste commit.</p>}
           <ul class="file-list">
             {files.map((file, index) => (
-              <FileRow key={file.path} file={file} index={index} restored={restored} />
+              <FileRow key={file.path} file={file} index={index} restored={restored} counted={counted} />
             ))}
           </ul>
         </>
@@ -260,24 +286,32 @@ function FileList({ details, restored }: { details: CommitDetails; restored: boo
   );
 }
 
-function FileRow({ file, index, restored }: { file: FileChange; index: number; restored: boolean }) {
+function FileRow({ file, index, restored, counted }: { file: FileChange; index: number; restored: boolean; counted: boolean }) {
   const status = STATUS[file.status];
-  const slash = file.path.lastIndexOf('/');
-  const name = file.path.slice(slash + 1);
-  const dir = slash === -1 ? '' : file.path.slice(0, slash + 1);
+  // Caminhos vêm do repositório: caracteres de direção ficam visíveis, e cada parte vai num <bdi>.
+  const path = showControls(file.path);
+  const slash = path.lastIndexOf('/');
+  const name = path.slice(slash + 1);
+  const dir = slash === -1 ? '' : path.slice(0, slash + 1);
 
   return (
     <li class="file" style={restored ? { animation: 'none' } : { animationDelay: `${Math.min(index, 20) * 18}ms` }}>
-      <button type="button" class="file-button" onClick={() => vscode.postMessage({ type: 'openFile', index })} title={`${status.label}: ${file.path}`}>
+      <button type="button" class="file-button" onClick={() => vscode.postMessage({ type: 'openFile', index })} title={`${status.label}: ${isolate(file.path)}`}>
         <span class={`status status-${file.status}`} aria-label={status.label}>
           {status.letter}
         </span>
+        {/* Numa aba estreita o "…" corta primeiro o caminho antigo, depois a pasta; o nome do arquivo fica. */}
         <span class="file-path">
-          {file.oldPath && <span class="muted">{file.oldPath} → </span>}
-          {dir && <span class="muted">{dir}</span>}
-          <span class="file-name">{name}</span>
+          {file.oldPath && (
+            <>
+              <bdi class="file-old muted">{showControls(file.oldPath)}</bdi>
+              <span class="file-arrow muted">→</span>
+            </>
+          )}
+          {dir && <bdi class="file-dir muted">{dir}</bdi>}
+          <bdi class="file-name">{name}</bdi>
         </span>
-        <ChangeCount file={file} />
+        {counted && <ChangeCount file={file} />}
       </button>
     </li>
   );
@@ -291,7 +325,7 @@ function ChangeCount({ file }: { file: FileChange }) {
   const green = total === 0 ? 0 : Math.round((file.additions / total) * blocks);
   return (
     <span class="count small">
-      <span class="plus">+{file.additions}</span> <span class="minus">−{file.deletions}</span>
+      <span class="plus">+{formatCount(file.additions)}</span> <span class="minus">−{formatCount(file.deletions)}</span>
       <span class="bar" aria-hidden="true">
         {Array.from({ length: blocks }, (_, i) => (
           <span key={i} class={total === 0 ? 'bar-empty' : i < green ? 'bar-plus' : 'bar-minus'} />
@@ -303,7 +337,10 @@ function ChangeCount({ file }: { file: FileChange }) {
 
 function Skeleton() {
   return (
-    <main class="page" aria-busy="true" aria-label="Carregando commit">
+    <main class="page" aria-busy="true">
+      <span class="sr-only" role="status">
+        Carregando commit…
+      </span>
       <span class="skeleton" style={{ display: 'block', width: '60%', height: '20px', marginBottom: '20px' }} />
       <span class="skeleton" style={{ display: 'block', width: '35%', height: '12px', marginBottom: '32px' }} />
       {Array.from({ length: 5 }, (_, i) => (
@@ -327,6 +364,49 @@ function PendingIcon() {
     <svg class="place-icon" viewBox="0 0 16 16" aria-hidden="true">
       <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2" />
       <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * Botão que copia o código do commit. A extensão confirma na barra de status, longe do botão; por isso
+ * o próprio botão mostra ✓ e "Copiado!" por 2 s e o leitor de tela ouve a mesma frase da barra.
+ */
+function CopyHashButton({ hash }: { hash: string }) {
+  const [copied, setCopied] = useState(0);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(0), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <>
+      <button
+        type="button"
+        class="hash"
+        title="Copiar o código completo deste commit"
+        onClick={() => {
+          vscode.postMessage({ type: 'copyHash' });
+          // Um número novo a cada clique: clicar de novo dentro dos 2 s recomeça a contagem.
+          setCopied((count) => count + 1);
+        }}
+      >
+        {/* Por 2 s: "Copiado!" no lugar do código e o ✓ no lugar do ícone de copiar. */}
+        {copied ? <span>Copiado!</span> : <span class="mono">{shortHash(hash)}</span>}
+        {copied ? <CopiedIcon /> : <CopyIcon />}
+      </button>
+      {/* Fica sempre na página (vazia): o leitor de tela só anuncia o que muda dentro de uma região que já existe. */}
+      <span class="sr-only" role="status">
+        {copied ? 'Código do commit copiado' : ''}
+      </span>
+    </>
+  );
+}
+
+function CopiedIcon() {
+  return (
+    <svg class="copy-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
   );
 }

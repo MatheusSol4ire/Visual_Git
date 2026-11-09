@@ -16,3 +16,15 @@ export function getMotionMode(): MotionMode {
   if (reduceMotion === 'off') return 'on';
   return 'auto';
 }
+
+/**
+ * Avisa quando alguma configuração que muda as animações foi alterada, já com o novo modo.
+ * Usado pelas duas telas: uma configuração nova de aparência entra aqui e vale para as duas.
+ */
+export function onDidChangeMotion(listener: (motion: MotionMode) => void): vscode.Disposable {
+  return vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration('visualGit.animations') || event.affectsConfiguration('workbench.reduceMotion')) {
+      listener(getMotionMode());
+    }
+  });
+}

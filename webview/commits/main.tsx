@@ -2,11 +2,13 @@ import { render } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Commit, CommitFilter, FromCommitsView, Ref, RepoOverview, RepoState, ToCommitsView } from '../../src/shared/protocol.ts';
 import { GraphCell } from '../graph/GraphCell.tsx';
-import { createLayoutState, layoutCommits, type GraphRow, type LayoutState } from '../graph/layout.ts';
+import { createLayoutState, lanesFor, layoutCommits, type GraphRow, type LayoutState } from '../graph/layout.ts';
 import { Avatar, RefChips } from '../shared/components.tsx';
-import { timeAgo } from '../shared/format.ts';
+import { fullDate, isolate, showControls, timeAgo } from '../shared/format.ts';
 import { firstGen, parseSavedList, type SavedList } from '../shared/savedState.ts';
 import { isToCommitsView } from '../shared/messages.ts';
+import { memo } from '../shared/memo.ts';
+import { useNow } from '../shared/clock.ts';
 import { applyMotion, getVsCode, onHostMessage } from '../shared/vscode.ts';
 import {
   aheadBadge,
@@ -14,6 +16,7 @@ import {
   currentOptionLabel,
   filterFromValue,
   filterValue,
+  lostBranchName,
   sameFilter,
 } from './branchText.ts';
 import { followPinned, keepPreview, litCommits, sameRef, type Highlight } from './highlight.ts';
@@ -22,7 +25,9 @@ import '../styles/commits.css';
 
 const vscode = getVsCode<FromCommitsView>();
 
+/** Altura de cada linha da lista. É o único lugar com o número: o CSS usa `var(--vg-row)`. */
 const ROW_HEIGHT = 44;
+document.documentElement.style.setProperty('--vg-row', `${ROW_HEIGHT}px`);
 /** Linhas extras desenhadas acima/abaixo da área visível, para a rolagem ficar lisa. */
 const OVERSCAN = 8;
 /** Acima disso o grafo é cortado, para não engolir a barra lateral. */
@@ -67,7 +72,10 @@ function App() {
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [pinned, setPinned] = useState<Highlight | null>(saved.pinned);
   const [preview, setPreview] = useState<Highlight | null>(null);
-  const layout = useRef<LayoutState>(createLayoutState());
+  /** Nome da branch escolhida em "Mostrar" que sumiu (a lista voltou para "todas"); some no "OK" ou na próxima troca de filtro. */
+  const [lostBranch, setLostBranch] = useState<string | null>(null);
+  const now = useNow();
+  const layout = useRef<LayoutState>(createLayoutState(null, MAX_LANES));
   const viewRef = useRef(view);
   viewRef.current = view;
   const filterRef = useRef(filter);
@@ -137,12 +145,16 @@ function App() {
           }
           setBusy(false);
           // A branch escolhida pode ter sido apagada: a extensão avisa qual filtro valeu de fato.
-          if (!sameFilter(message.filter, filterRef.current)) saveFilter(message.filter);
+          if (!sameFilter(message.filter, filterRef.current)) {
+            const before = previous.kind === 'commits' ? previous.data.overview : undefined;
+            setLostBranch(lostBranchName(filterRef.current, message.filter, message.overview, before));
+            saveFilter(message.filter);
+          }
 
           const continuing = message.skip > 0 && previous.kind === 'commits';
           const restored = restoring.current;
           restoring.current = false;
-          if (!continuing) layout.current = createLayoutState(message.overview?.base?.hash ?? null);
+          if (!continuing) layout.current = createLayoutState(message.overview?.base?.hash ?? null, MAX_LANES);
           const rows = layoutCommits(message.commits, layout.current);
 
           if (continuing) {
@@ -214,6 +226,7 @@ function App() {
     if (sameFilter(next, filterRef.current)) return;
     nextGen();
     saveFilter(next);
+    setLostBranch(null);
     setPinned(null);
     setPreview(null);
     setBusy(true);
@@ -250,6 +263,7 @@ function App() {
   const showAll = () => {
     nextGen();
     saveFilter({ kind: 'all' });
+    setLostBranch(null);
     setPinned(null);
     setPreview(null);
     setView({ kind: 'loading' });
@@ -266,6 +280,7 @@ function App() {
     <div class={busy ? 'layout busy' : 'layout'}>
       <Header repoName={data.repoName} head={data.head} />
       <FilterBar data={data} filter={filter} onChange={changeFilter} />
+      {lostBranch !== null && <LostBranchNotice name={lostBranch} onClose={() => setLostBranch(null)} />}
       <BranchSummary overview={data.overview} />
       {pinned && <HighlightBar name={pinned.name} onClear={() => setPinned(null)} />}
       <CommitList
@@ -274,6 +289,7 @@ function App() {
         entering={entering}
         fresh={fresh}
         highlight={preview ?? pinned}
+        now={now}
         onSelect={setSelected}
         onOpen={open}
         onLoadMore={loadMore}
@@ -291,12 +307,19 @@ function App() {
 function Header({ repoName, head }: { repoName: string; head: string | null }) {
   return (
     <header class="header">
-      <span class="header-repo" title={`Projeto: ${repoName}`}>
-        {repoName}
+      <span class="header-repo" title={`Projeto: ${isolate(repoName)}`}>
+        {showControls(repoName)}
       </span>
-      <span class="header-branch" title={head ? `Você está na branch ${head}` : 'Você não está em nenhuma branch (HEAD solto)'}>
+      <span
+        class="header-branch"
+        title={
+          head
+            ? `Você está na branch ${isolate(head)}`
+            : 'Você está vendo um commit fora de qualquer branch. Para voltar, troque para uma branch (ex.: main) na barra de status, no canto inferior esquerdo. Commits feitos agora não ficam em nenhuma branch.'
+        }
+      >
         <BranchIcon />
-        {head ?? 'sem branch'}
+        <span class="header-branch-name">{head ? showControls(head) : 'fora de uma branch'}</span>
       </span>
     </header>
   );
@@ -308,7 +331,7 @@ function FilterBar({ data, filter, onChange }: { data: Data; filter: CommitFilte
   const local = branches.filter((b) => b.type === 'branch');
   const remote = branches.filter((b) => b.type === 'remote');
   const baseName = data.overview?.base?.name ?? null;
-  const together = baseName ? ` (junto com a ${baseName})` : '';
+  const together = baseName ? ` (junto com a ${isolate(baseName)})` : '';
 
   return (
     <div class="filter-bar">
@@ -328,8 +351,8 @@ function FilterBar({ data, filter, onChange }: { data: Data; filter: CommitFilte
           {local.length > 0 && (
             <optgroup label={`No seu computador${together}`}>
               {local.map((b) => (
-                <option key={b.ref} value={`ref:${b.ref}`}>
-                  {b.name}
+                <option key={b.ref} value={filterValue({ kind: 'branch', ref: b.ref })}>
+                  {showControls(b.name)}
                 </option>
               ))}
             </optgroup>
@@ -337,8 +360,8 @@ function FilterBar({ data, filter, onChange }: { data: Data; filter: CommitFilte
           {remote.length > 0 && (
             <optgroup label={`No servidor${together}`}>
               {remote.map((b) => (
-                <option key={b.ref} value={`ref:${b.ref}`}>
-                  {b.name}
+                <option key={b.ref} value={filterValue({ kind: 'branch', ref: b.ref })}>
+                  {showControls(b.name)}
                 </option>
               ))}
             </optgroup>
@@ -352,16 +375,34 @@ function FilterBar({ data, filter, onChange }: { data: Data; filter: CommitFilte
 
 /** Frase simples sobre a branch atual: o que ainda não foi para a main e o que a main tem de novo. */
 function BranchSummary({ overview }: { overview: RepoOverview | undefined }) {
-  const { ahead, behind } = currentBranchSummary(overview);
+  const { ahead, aheadTip, behind } = currentBranchSummary(overview);
   if (!ahead && !behind) return null;
   return (
     <div class="summary" role="status">
       <InfoIcon />
       <span>
-        {ahead}
+        {ahead && <span title={aheadTip ?? undefined}>{ahead}</span>}
         {ahead && behind && ' '}
         {behind}
       </span>
+    </div>
+  );
+}
+
+/** A branch escolhida em "Mostrar" sumiu e a lista voltou sozinha para "todas": diz por quê. */
+function LostBranchNotice({ name, onClose }: { name: string; onClose: () => void }) {
+  return (
+    <div class="lost-branch" role="status">
+      <span class="lost-branch-text">
+        A branch{' '}
+        <strong>
+          <bdi>{showControls(name)}</bdi>
+        </strong>{' '}
+        não existe mais. Mostrando todas as branches.
+      </span>
+      <button type="button" class="ghost small-button" onClick={onClose}>
+        OK
+      </button>
     </div>
   );
 }
@@ -370,7 +411,11 @@ function HighlightBar({ name, onClear }: { name: string; onClear: () => void }) 
   return (
     <div class="highlight-bar" role="status">
       <span class="highlight-text">
-        Destacando o caminho de <strong>{name}</strong>
+        Destacando os commits que fazem parte de{' '}
+        <strong>
+          <bdi>{showControls(name)}</bdi>
+        </strong>
+        . Os apagados não estão nela.
       </span>
       <button type="button" class="ghost small-button" onClick={onClear} title="Parar de destacar (Esc)">
         Limpar
@@ -385,6 +430,8 @@ interface ListProps {
   entering: boolean;
   fresh: Set<string>;
   highlight: Highlight | null;
+  /** Hora usada no "há N minutos" (muda a cada minuto). */
+  now: number;
   onSelect: (hash: string) => void;
   onOpen: (hash: string) => void;
   onLoadMore: (skip: number) => void;
@@ -395,7 +442,7 @@ interface ListProps {
 
 /** Lista "virtualizada": só desenha as linhas que estão na tela, então aguenta milhares de commits. */
 function CommitList(props: ListProps) {
-  const { data, selected, entering, fresh, highlight, onSelect, onOpen, onLoadMore, onPick, onPreview, onClearHighlight } = props;
+  const { data, selected, entering, fresh, highlight, now, onSelect, onOpen, onLoadMore, onPick, onPreview, onClearHighlight } = props;
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
@@ -405,11 +452,24 @@ function CommitList(props: ListProps) {
    */
   const requested = useRef({ gen: data.gen, skip: -1 });
   const { commits, rows, hasMore, overview } = data;
+  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const last = Math.min(commits.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + OVERSCAN);
 
-  const lanes = useMemo(() => Math.min(MAX_LANES, rows.reduce((max, row) => Math.max(max, row.width), 1)), [rows]);
+  // Largura do grafo: a das linhas desenhadas (tela + folga), não a do histórico inteiro; um trecho
+  // largo lá embaixo não rouba espaço do título no topo. Para o texto não ficar indo e voltando, a
+  // largura só cresce enquanto a pessoa rola esta lista; volta a ser a da tela quando chega uma
+  // lista nova (recarga ou outro filtro, que mudam o `gen`).
+  const wanted = useMemo(() => lanesFor(rows, first, last, MAX_LANES), [rows, first, last]);
+  const [widest, setWidest] = useState({ gen: data.gen, lanes: wanted });
+  const lanes = widest.gen === data.gen ? Math.max(widest.lanes, wanted) : wanted;
+  useEffect(() => {
+    if (widest.gen !== data.gen || widest.lanes !== lanes) setWidest({ gen: data.gen, lanes });
+  }, [data.gen, lanes]);
+
   const headHash = useMemo(() => commits.find((c) => c.refs.some((r) => r.current || r.type === 'head'))?.hash, [commits]);
   const lit = useMemo(() => litCommits(highlight, commits), [highlight?.hash, commits]);
-  const selectedIndex = selected ? commits.findIndex((c) => c.hash === selected) : -1;
+  // Só procura de novo quando a seleção ou a lista mudam (não a cada evento de rolagem).
+  const selectedIndex = useMemo(() => (selected ? commits.findIndex((c) => c.hash === selected) : -1), [selected, commits]);
   const shownFilter = filterValue(data.filter);
   const lastFilter = useRef(shownFilter);
   // Último commit selecionado que já foi trazido para a tela. Com rolagem salva para restaurar,
@@ -485,14 +545,15 @@ function CommitList(props: ListProps) {
       const next = Math.max(0, Math.min(commits.length - 1, from + move));
       const commit = commits[next];
       if (commit) onSelect(commit.hash);
-    } else if ((event.key === 'Enter' || event.key === ' ') && selected) {
+    } else if ((event.key === 'Enter' || event.key === ' ') && selected && selectedIndex >= 0) {
       event.preventDefault();
       onOpen(selected);
     }
   };
 
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const last = Math.min(commits.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + OVERSCAN);
+  // Total para o leitor de tela ("5 de 300"): só as linhas perto da tela existem, então ele não consegue
+  // contar sozinho. -1 = total ainda desconhecido (há mais commits para carregar).
+  const setSize = hasMore ? -1 : commits.length;
   const visible = [];
   for (let i = first; i < last; i++) {
     const commit = commits[i];
@@ -502,6 +563,7 @@ function CommitList(props: ListProps) {
       <CommitRow
         key={commit.hash}
         index={i}
+        setSize={setSize}
         commit={commit}
         row={row}
         lanes={lanes}
@@ -512,6 +574,7 @@ function CommitList(props: ListProps) {
         lit={lit}
         activeRef={highlight?.hash === commit.hash ? highlight : null}
         overview={overview}
+        now={now}
         onOpen={onOpen}
         onPick={onPick}
         onPreview={onPreview}
@@ -526,7 +589,8 @@ function CommitList(props: ListProps) {
       tabIndex={0}
       role="listbox"
       aria-label="Commits"
-      aria-activedescendant={selected ? `commit-${selected}` : undefined}
+      // Só aponta para a linha selecionada se ela estiver desenhada (a lista só desenha o que está perto da tela).
+      aria-activedescendant={selected && selectedIndex >= first && selectedIndex < last ? `commit-${selected}` : undefined}
       onScroll={(event) => {
         const top = (event.currentTarget as HTMLDivElement).scrollTop;
         setScrollTop(top);
@@ -550,6 +614,8 @@ function CommitList(props: ListProps) {
 
 interface RowProps {
   index: number;
+  /** Total de commits da lista para o leitor de tela; -1 = ainda não se sabe. */
+  setSize: number;
   commit: Commit;
   row: GraphRow;
   lanes: number;
@@ -560,13 +626,20 @@ interface RowProps {
   lit: Set<string> | null;
   activeRef: Highlight | null;
   overview: RepoOverview | undefined;
+  now: number;
   onOpen: (hash: string) => void;
   onPick: (hash: string, ref: Ref) => void;
   onPreview: (highlight: Highlight | null) => void;
 }
 
-function CommitRow(props: RowProps) {
-  const { index, commit, row, lanes, isHead, selected, entering, fresh, lit, activeRef, overview, onOpen, onPick, onPreview } = props;
+/**
+ * Uma linha da lista. Com `memo`, rolar não redesenha as linhas que continuam na tela: todas as
+ * propriedades são estáveis entre um evento de rolagem e outro (objetos guardados, `lit` em useMemo,
+ * funções com useCallback ou o próprio `setState`). Quem acrescentar uma propriedade aqui precisa
+ * manter isso, senão toda linha volta a ser redesenhada a cada rolagem.
+ */
+const CommitRow = memo(function CommitRow(props: RowProps) {
+  const { index, setSize, commit, row, lanes, isHead, selected, entering, fresh, lit, activeRef, overview, now, onOpen, onPick, onPreview } = props;
   const inPath = !lit || lit.has(commit.hash);
   const badge = aheadBadge(commit, overview);
   const classes = ['row'];
@@ -581,16 +654,18 @@ function CommitRow(props: RowProps) {
       class={classes.join(' ')}
       role="option"
       aria-selected={selected}
+      aria-posinset={index + 1}
+      aria-setsize={setSize}
       style={{
         top: `${index * ROW_HEIGHT}px`,
         animationDelay: entering ? `${Math.min(index, 14) * 22}ms` : undefined,
       }}
-      title={`${commit.subject}\n${commit.authorName} · ${new Date(commit.date).toLocaleString('pt-BR')}`}
       onClick={() => onOpen(commit.hash)}
     >
       <GraphCell row={row} lanes={lanes} height={ROW_HEIGHT} isHead={isHead} lit={lit} inPath={inPath} />
       <Avatar name={commit.authorName} email={commit.authorEmail} />
-      <div class="row-text">
+      {/* A dica fica no texto, não na linha: no `option` ela virava descrição e o leitor de tela lia o título duas vezes. */}
+      <div class="row-text" title={`${commit.subject}\n${isolate(commit.authorName)} · ${fullDate(commit.date)}`}>
         <div class="row-line">
           <span class="row-subject">{commit.subject || <span class="muted">(sem mensagem)</span>}</span>
           {badge && (
@@ -601,7 +676,7 @@ function CommitRow(props: RowProps) {
         </div>
         <div class="row-meta">
           <span class="row-author">
-            {commit.authorName} · {timeAgo(commit.date)}
+            <bdi>{showControls(commit.authorName)}</bdi> · {timeAgo(commit.date, now)}
           </span>
           <RefChips
             refs={commit.refs}
@@ -613,11 +688,14 @@ function CommitRow(props: RowProps) {
       </div>
     </div>
   );
-}
+});
 
 function Skeleton() {
   return (
-    <div class="layout" aria-busy="true" aria-label="Carregando commits">
+    <div class="layout" aria-busy="true">
+      <span class="sr-only" role="status">
+        Carregando commits…
+      </span>
       <div class="header">
         <span class="skeleton" style={{ width: '40%', height: '12px' }} />
       </div>
@@ -665,7 +743,9 @@ function StateNotice({ state, onRetry, onShowAll }: NoticeProps) {
         <div class="empty">
           <span class="empty-title">O Git deste projeto está numa pasta acima</span>
           <span>
-            A pasta aberta fica dentro de outro projeto com Git, em <strong style={{ overflowWrap: 'anywhere' }}>{state.root}</strong>. Mostre o histórico
+            A pasta aberta fica dentro de outro projeto com Git, em <strong style={{ overflowWrap: 'anywhere' }}>
+              <bdi>{showControls(state.root)}</bdi>
+            </strong>. Mostre o histórico
             dele só se você conhece e confia nessa pasta.
           </span>
           <button type="button" onClick={() => vscode.postMessage({ type: 'openParentRepo', always: false })}>
@@ -694,7 +774,13 @@ function StateNotice({ state, onRetry, onShowAll }: NoticeProps) {
       return (
         <div class="empty">
           <span class="empty-title">Nenhum commit ainda</span>
-          <span>O projeto {state.repoName} ainda não tem commits. Faça o primeiro e ele aparece aqui.</span>
+          <span>
+            O projeto <bdi>{showControls(state.repoName)}</bdi> ainda não tem commits. Para fazer o primeiro, use a área
+            Controle do Código-Fonte (Ctrl+Shift+G).
+          </span>
+          <button type="button" onClick={() => vscode.postMessage({ type: 'openSourceControl' })}>
+            Abrir Controle do Código-Fonte
+          </button>
         </div>
       );
     case 'error':

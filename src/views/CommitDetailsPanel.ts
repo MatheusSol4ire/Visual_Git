@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
-import { isAbsolute, join, relative } from 'node:path';
 import { isCommitHash, readCommitDetails, readTreeEntry, type Repo } from '../git/gitClient.ts';
 import { getBuiltInGitApi } from '../git/resolveGit.ts';
 import type { RepoService } from '../repo/RepoService.ts';
-import { getMotionMode } from '../settings.ts';
+import { getMotionMode, onDidChangeMotion } from '../settings.ts';
 import type { CommitDetails, FileChange, FromDetailsView, ToDetailsView } from '../shared/protocol.ts';
 import { renderWebviewHtml, webviewRoots } from './html.ts';
+import { repoFilePath } from './repoPath.ts';
+import { detailsTabTitle } from './tabTitle.ts';
 
 /** A aba com os detalhes do commit clicado. Uma só, reaproveitada a cada clique. */
 export class CommitDetailsPanel implements vscode.Disposable {
@@ -21,6 +22,8 @@ export class CommitDetailsPanel implements vscode.Disposable {
   private detailsVersion = -1;
   private repo: Repo | undefined;
   private requestId = 0;
+  /** Cancela a leitura em andamento: o Git para de trabalhar num commit que ninguém vai ver. */
+  private loading: AbortController | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(extensionUri: vscode.Uri, repos: RepoService, onNavigate: (hash: string) => void) {
@@ -35,11 +38,7 @@ export class CommitDetailsPanel implements vscode.Disposable {
         // Escondida, a tela nem existe (o VS Code a recria ao voltar e ela pede tudo de novo).
         if (this.ready && this.panel.visible) void this.load(this.hash);
       }),
-      vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration('visualGit.animations') || event.affectsConfiguration('workbench.reduceMotion')) {
-          this.post({ type: 'settings', motion: getMotionMode() });
-        }
-      }),
+      onDidChangeMotion((motion) => this.post({ type: 'settings', motion })),
     );
   }
 
@@ -54,10 +53,15 @@ export class CommitDetailsPanel implements vscode.Disposable {
         'visualGit.details',
         'Commit',
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
-        { enableScripts: true, localResourceRoots: webviewRoots(this.extensionUri) },
+        // enableForms: false — a tela não tem formulários (por padrão o VS Code os libera junto com os scripts).
+        { enableScripts: true, enableForms: false, localResourceRoots: webviewRoots(this.extensionUri) },
       );
       this.panel = panel;
-      panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'icon.svg');
+      // O VS Code desenha o ícone da aba com as cores do arquivo: o traço claro some no tema claro.
+      panel.iconPath = {
+        light: vscode.Uri.joinPath(this.extensionUri, 'media', 'icon-light.svg'),
+        dark: vscode.Uri.joinPath(this.extensionUri, 'media', 'icon.svg'),
+      };
       panel.webview.html = renderWebviewHtml(panel.webview, this.extensionUri, 'details', getMotionMode(), 'Commit');
       const listeners = [
         panel.webview.onDidReceiveMessage((message: FromDetailsView) => this.onMessage(message)),
@@ -75,6 +79,7 @@ export class CommitDetailsPanel implements vscode.Disposable {
           this.ready = false;
           // Um carregamento ainda a caminho era para esta aba: a próxima não pode recebê-lo.
           this.requestId++;
+          this.cancelLoad();
           this.hash = undefined;
           this.details = undefined;
           this.repo = undefined;
@@ -91,7 +96,8 @@ export class CommitDetailsPanel implements vscode.Disposable {
   private deliver(hash: string): void {
     if (this.details?.hash === hash && this.detailsVersion === this.repoVersion) {
       this.requestId++; // um carregamento de outro commit ainda a caminho não vale mais
-      this.post({ type: 'details', details: this.details });
+      this.cancelLoad();
+      this.showDetails(this.details);
       return;
     }
     void this.load(hash);
@@ -119,34 +125,53 @@ export class CommitDetailsPanel implements vscode.Disposable {
       case 'copyHash':
         if (this.details) {
           await vscode.env.clipboard.writeText(this.details.hash);
-          void vscode.window.setStatusBarMessage('$(check) Hash do commit copiado', 2500);
+          void vscode.window.setStatusBarMessage('$(check) Código do commit copiado', 2500);
         }
         break;
     }
   }
 
+  private cancelLoad(): void {
+    this.loading?.abort();
+    this.loading = undefined;
+  }
+
   private async load(hash: string): Promise<void> {
     const id = ++this.requestId;
     const version = this.repoVersion;
+    // Só um commit é lido por vez: o anterior (outro clique, ou o repositório mudou) é cancelado.
+    this.cancelLoad();
+    const loading = new AbortController();
+    this.loading = loading;
     this.post({ type: 'loading', hash });
     const result = await this.repos.get();
     if (id !== this.requestId) return;
     if ('state' in result) {
+      if (this.panel) this.panel.title = 'Commit';
       this.post({ type: 'error', message: 'Não foi possível acessar o repositório.' });
       return;
     }
     try {
-      const details = await readCommitDetails(result.repo, hash);
+      const details = await readCommitDetails(result.repo, hash, loading.signal);
       if (id !== this.requestId) return; // o usuário já clicou em outro commit (ou fechou a aba)
+      this.loading = undefined;
       this.repo = result.repo;
       this.details = details;
       this.detailsVersion = version;
-      if (this.panel) this.panel.title = `Commit ${details.hash.slice(0, 7)}`;
-      this.post({ type: 'details', details });
+      this.showDetails(details);
     } catch (error) {
-      if (id !== this.requestId) return;
+      if (id !== this.requestId || loading.signal.aborted) return;
+      this.loading = undefined;
+      // O título não pode continuar com o assunto do commit anterior.
+      if (this.panel) this.panel.title = 'Commit';
       this.post({ type: 'error', message: this.repos.toErrorState(error).message });
     }
+  }
+
+  /** Manda os detalhes para a tela e põe o assunto do commit no título da aba. */
+  private showDetails(details: CommitDetails): void {
+    if (this.panel) this.panel.title = detailsTabTitle(details.subject, details.hash);
+    this.post({ type: 'details', details });
   }
 
   private post(message: ToDetailsView): void {
@@ -222,8 +247,6 @@ async function submoduleNote(repo: Repo, details: CommitDetails, file: FileChang
 
 /** Monta o endereço do arquivo garantindo que ele fica dentro do repositório. */
 function safeFileUri(root: string, path: string): vscode.Uri | undefined {
-  const full = join(root, path);
-  const rel = relative(root, full);
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
-  return vscode.Uri.file(full);
+  const full = repoFilePath(root, path);
+  return full === undefined ? undefined : vscode.Uri.file(full);
 }

@@ -32,8 +32,15 @@ body {
   word-break: break-word;
 }
 
+/* Topo: todas as etiquetas aparecem, quebrando linha numa aba estreita (como em "Aparece em");
+   sem isso a última era cortada no meio e as seguintes sumiam. Nenhuma passa da largura da aba. */
+.hero .refs {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 .hero .ref {
-  max-width: 220px;
+  max-width: min(220px, 100%);
 }
 
 /* ---------------- Autor e data ---------------- */
@@ -128,12 +135,20 @@ body {
 }
 
 /* ---------------- Commits anteriores ---------------- */
+/* Um commit anterior por linha, cada um com o seu rótulo (no merge, os rótulos dizem qual é qual). */
 .lineage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.lineage-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-  margin-top: 16px;
 }
 
 .ghost.parent {
@@ -245,15 +260,42 @@ body {
   --st: var(--vg-renamed-text);
 }
 
+/* Caminho em partes: [antigo] → [pasta/][nome]. Quando não cabe, o caminho antigo encolhe primeiro
+   (flex-shrink maior), depois a pasta, cada um com "…"; o nome do arquivo só encolhe se sozinho
+   não couber. Antes era um texto só cortado no fim, e o nome novo de um renomeado sumia. */
 .file-path {
   flex: 1;
   min-width: 0;
+  display: flex;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.file-old,
+.file-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-old {
+  flex: 0 1000 auto;
+}
+
+.file-dir {
+  flex: 0 1 auto;
+}
+
+.file-arrow {
+  flex: none;
+  margin: 0 0.4em;
+}
+
 .file-name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
 }
 

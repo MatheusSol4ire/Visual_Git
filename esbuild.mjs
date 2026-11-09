@@ -4,15 +4,22 @@
 //  - dist/details.js + .css       -> a aba de detalhes do commit
 import * as esbuild from 'esbuild';
 import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Raiz do projeto = a pasta deste arquivo, seja qual for a pasta do terminal. Assim o `rmSync`
+// abaixo nunca apaga a pasta `dist` de outro lugar, e as entradas/saídas sempre são as do projeto.
+const root = fileURLToPath(new URL('.', import.meta.url));
 
 const watch = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
 
 // Começa sempre do zero, para não sobrar arquivo velho dentro do .vsix.
-rmSync('dist', { recursive: true, force: true });
+rmSync(join(root, 'dist'), { recursive: true, force: true });
 
 /** @type {import('esbuild').BuildOptions} */
 const common = {
+  absWorkingDir: root,
   bundle: true,
   minify: production,
   sourcemap: !production,

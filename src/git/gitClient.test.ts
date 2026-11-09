@@ -1,22 +1,31 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import {
   findGitInPath,
   findRepo,
   GitError,
   GitNotFoundError,
+  isInside,
+  MAX_COUNTED_FILES,
+  MAX_LIMIT,
+  MAX_SKIP,
   NotARepoError,
+  parseGitDirs,
+  parseRepoDirs,
+  readAllBranchStatus,
   readBranches,
   readBranchStatus,
   readCommitDetails,
   readCommitPlacement,
   readCommits,
+  readGitDirs,
   readHead,
   readTreeEntry,
+  repoName,
   toGitError,
 } from './gitClient.ts';
 import { pickBase } from './branches.ts';
@@ -218,6 +227,213 @@ test('nunca usa um git falso plantado na pasta do projeto', async () => {
   assert.equal(repo.gitPath, found);
 });
 
+test('readHead: nome certo mesmo com tag de mesmo nome; branch sem commits; HEAD solto', async () => {
+  const folder = join(base, 'head');
+  git(base, 'init', folder);
+  commit(folder, 'a.txt', 'Base');
+  git(folder, 'tag', 'main');
+  const repo = await findRepo(gitPath, folder);
+  assert.equal(await readHead(repo), 'main'); // e não "heads/main"
+  assert.equal((await readBranches(repo)).branches.find((b) => b.current)?.name, 'main');
+
+  git(folder, 'checkout', '-q', '--orphan', 'nova');
+  assert.equal(await readHead(repo), 'nova');
+  // O for-each-ref não lista a branch sem commits: por isso a lista ainda pergunta ao readHead nesse caso.
+  assert.equal((await readBranches(repo)).branches.find((b) => b.current), undefined);
+
+  git(folder, 'checkout', '-q', '--detach', 'main');
+  assert.equal(await readHead(repo), null);
+});
+
+test('título dos detalhes é igual ao da lista (mensagem com linhas em branco no começo ou título em 2 linhas)', async () => {
+  const folder = join(base, 'titulos');
+  git(base, 'init', folder);
+  writeFileSync(join(folder, 'a.txt'), 'a');
+  git(folder, 'add', '.');
+  git(folder, 'commit', '--cleanup=verbatim', '-m', '\n\nTítulo depois de linhas em branco\n\nCorpo.');
+  writeFileSync(join(folder, 'b.txt'), 'b');
+  git(folder, 'add', '.');
+  git(folder, 'commit', '-m', 'Corrige o login\ne ajusta o cadastro\n\nDetalhes do corpo.');
+
+  const repo = await findRepo(gitPath, folder);
+  for (const listed of (await readCommits(repo, 0, 10)).commits) {
+    const details = await readCommitDetails(repo, listed.hash);
+    assert.ok(details.subject, 'título não pode ficar vazio');
+    assert.equal(details.subject, listed.subject);
+  }
+  const [second, first] = (await readCommits(repo, 0, 10)).commits;
+  assert.equal(second!.subject, 'Corrige o login e ajusta o cadastro');
+  assert.equal((await readCommitDetails(repo, second!.hash)).body, 'Detalhes do corpo.');
+  assert.equal((await readCommitDetails(repo, first!.hash)).body, 'Corpo.');
+});
+
+test('readGitDirs devolve pastas absolutas que existem, também numa worktree', async () => {
+  const folder = join(base, 'pastas');
+  git(base, 'init', folder);
+  commit(folder, 'a.txt', 'Base');
+  const extra = join(base, 'pastas-worktree');
+  git(folder, 'worktree', 'add', '-q', '-b', 'outra', extra);
+
+  const main = await readGitDirs(await findRepo(gitPath, folder));
+  assert.ok(isAbsolute(main.gitDir) && isAbsolute(main.commonDir));
+  assert.equal(main.gitDir, main.commonDir);
+  assert.ok(statSync(join(main.gitDir, 'HEAD')).isFile());
+
+  const tree = await readGitDirs(await findRepo(gitPath, extra));
+  assert.notEqual(tree.gitDir, tree.commonDir); // o HEAD da worktree fica numa pasta própria
+  assert.ok(statSync(join(tree.gitDir, 'HEAD')).isFile());
+  assert.equal(realpathSync(tree.commonDir), realpathSync(main.commonDir));
+});
+
+test('parseGitDirs: saída de Git antigo (caminhos relativos, opção repetida)', () => {
+  const root = resolve('/projeto');
+  assert.deepEqual(parseGitDirs('.git\n.git\n', root), { gitDir: join(root, '.git'), commonDir: join(root, '.git') });
+  // Git < 2.5 não conhece --git-common-dir e o repete: a pasta comum é a própria gitDir.
+  assert.deepEqual(parseGitDirs('.git\n--git-common-dir\n', root), { gitDir: join(root, '.git'), commonDir: join(root, '.git') });
+  // Antes do 2.31, o --path-format=absolute (que não usamos mais) viria repetido na 1ª linha.
+  assert.equal(parseGitDirs('--path-format=absolute\n.git\n.git\n', root), undefined);
+  assert.equal(parseGitDirs('', root), undefined);
+  // Caminho absoluto continua como está; espaço no fim do nome não é cortado.
+  const absolute = resolve('/outro/lugar /.git');
+  assert.equal(parseGitDirs(`${absolute}\r\n${absolute}\r\n`, root)?.gitDir, absolute);
+});
+
+test('findRepo traz a raiz e as pastas internas num processo só (também de uma subpasta e numa worktree)', async () => {
+  const folder = join(base, 'um-processo');
+  git(base, 'init', folder);
+  commit(folder, 'a.txt', 'Base');
+  const sub = join(folder, 'app', 'src');
+  mkdirSync(sub, { recursive: true });
+  const extra = join(base, 'um-processo-worktree');
+  git(folder, 'worktree', 'add', '-q', '-b', 'outra', extra);
+  mkdirSync(join(extra, 'pasta'));
+
+  for (const where of [folder, sub, extra, join(extra, 'pasta')]) {
+    const repo = await findRepo(gitPath, where);
+    assert.ok(repo.dirs, `sem pastas internas em ${where}`);
+    // Iguais às que o readGitDirs acha perguntando ao Git a partir da raiz.
+    const asked = await readGitDirs({ root: repo.root, name: repo.name, gitPath });
+    assert.equal(realpathSync(repo.dirs.gitDir), realpathSync(asked.gitDir));
+    assert.equal(realpathSync(repo.dirs.commonDir), realpathSync(asked.commonDir));
+    assert.deepEqual(await readGitDirs(repo), repo.dirs);
+  }
+});
+
+test('parseRepoDirs: só usa as pastas internas quando não há dúvida de onde ficam', () => {
+  const root = resolve('/projeto');
+  const sub = join(root, 'app');
+  const gitDir = join(root, '.git');
+  // Na própria raiz, relativos: resolvidos a partir dela.
+  assert.deepEqual(parseRepoDirs(`${root}
+.git
+.git
+`, root), { root, dirs: { gitDir, commonDir: gitDir } });
+  // Subpasta, Git atual: gitDir absoluta e a comum relativa à subpasta ("../.git").
+  assert.deepEqual(parseRepoDirs(`${root}
+${gitDir}
+../.git
+`, sub), { root, dirs: { gitDir, commonDir: gitDir } });
+  // Subpasta, Git anterior ao 2.13: a comum vinha relativa à raiz (".git") — na dúvida, sem pastas.
+  assert.deepEqual(parseRepoDirs(`${root}
+${gitDir}
+.git
+`, sub), { root });
+  // Git < 2.5 repete a opção que não conhece: a comum é a própria gitDir.
+  assert.deepEqual(parseRepoDirs(`${root}
+.git
+--git-common-dir
+`, root), { root, dirs: { gitDir, commonDir: gitDir } });
+  // Linhas a mais (ex.: quebra de linha no nome da pasta) ou a menos: quem chama pergunta só a raiz.
+  assert.equal(parseRepoDirs(`${root}
+nome
+.git
+.git
+`, root), undefined);
+  assert.equal(parseRepoDirs(`${root}
+`, root), undefined);
+});
+
+test('ler detalhes cancelado não deixa o Git trabalhando nem devolve resultado', async () => {
+  const folder = join(base, 'cancelado');
+  git(base, 'init', folder);
+  commit(folder, 'a.txt', 'Base');
+  commit(folder, 'b.txt', 'Segundo');
+  const repo = await findRepo(gitPath, folder);
+  const [head] = (await readCommits(repo, 0, 1)).commits;
+  assert.ok(head);
+
+  // Já cancelado: falha na hora como "cancelado", sem abrir processo.
+  const before = new AbortController();
+  before.abort();
+  const early = await readCommitDetails(repo, head.hash, before.signal).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  assert.ok(early instanceof GitError && early.kind === 'cancelled');
+
+  // Cancelado no meio: também falha (a resposta nunca chega a quem pediu).
+  const during = new AbortController();
+  const reading = readCommitDetails(repo, head.hash, during.signal);
+  during.abort();
+  await assert.rejects(reading);
+
+  // Sem cancelar, continua igual.
+  const details = await readCommitDetails(repo, head.hash, new AbortController().signal);
+  assert.equal(details.subject, 'Segundo');
+});
+
+test('toGitError: processo encerrado por cancelamento vira "cancelled"', () => {
+  const error = toGitError({ code: 'ABORT_ERR', message: 'The operation was aborted' }, '', process.cwd());
+  assert.ok(error instanceof GitError && error.kind === 'cancelled');
+});
+
+test('repoName: raiz de um disco não fica sem nome', () => {
+  assert.equal(repoName('/'), '/');
+  assert.ok(repoName(resolve('/'))); // "C:\" no Windows
+  assert.equal(repoName(join(base, 'meu projeto')), 'meu projeto');
+});
+
+// O Windows não deixa criar pasta terminando em espaço.
+test('pasta terminando em espaço continua sendo a raiz certa', { skip: process.platform === 'win32' }, async () => {
+  const folder = join(base, 'com espaço ');
+  git(base, 'init', folder);
+  commit(folder, 'a.txt', 'Base');
+  const repo = await findRepo(gitPath, folder);
+  assert.equal(realpathSync(repo.root), realpathSync(folder));
+  assert.equal(repo.name, 'com espaço ');
+  assert.equal((await readCommits(repo, 0, 10)).commits.length, 1);
+});
+
+test('busca no PATH recusa um Git que fica dentro da pasta do projeto (mesmo com caminho absoluto)', () => {
+  const folder = join(base, 'projeto-com-git');
+  const bin = join(folder, 'venv', 'bin');
+  mkdirSync(bin, { recursive: true });
+  const fake = join(bin, process.platform === 'win32' ? 'git.exe' : 'git');
+  writeFileSync(fake, 'falso');
+  const realPath = process.env.PATH ?? process.env.Path ?? '';
+
+  // Sem saber do projeto, o falso (que vem primeiro no PATH) seria o escolhido.
+  assert.equal(findGitInPath({ PATH: [bin, realPath].join(delimiter) }), fake);
+  // Sabendo, ele é pulado e o Git de verdade é usado.
+  const found = findGitInPath({ PATH: [bin, realPath].join(delimiter) }, [folder]);
+  assert.notEqual(found, fake);
+  assert.equal(found, gitPath);
+  // Só com o falso no PATH: "Git não encontrado", nunca o do projeto.
+  assert.throws(() => findGitInPath({ PATH: bin }, [folder]), GitNotFoundError);
+  // Uma pasta com nome parecido, mas fora do projeto, não é recusada.
+  assert.equal(findGitInPath({ PATH: bin }, [`${folder}-outro`]), fake);
+});
+
+test('isInside: mesma pasta, subpasta e pastas vizinhas', () => {
+  assert.equal(isInside('C:\\Proj\\bin\\git.exe', 'c:\\proj', 'win32'), true);
+  assert.equal(isInside('C:\\proj', 'C:\\proj\\', 'win32'), true);
+  assert.equal(isInside('C:\\proj-2\\git.exe', 'C:\\proj', 'win32'), false);
+  assert.equal(isInside('C:\\proj\\..\\outro\\git.exe', 'C:\\proj', 'win32'), false);
+  assert.equal(isInside('D:\\proj\\git.exe', 'C:\\proj', 'win32'), false);
+  assert.equal(isInside('/home/u/Proj/git', '/home/u/proj', 'linux'), false); // Linux diferencia maiúsculas
+  assert.equal(isInside('/home/u/proj/..bin/git', '/home/u/proj', 'linux'), true);
+});
+
 test('PATH sem Git dá erro claro', () => {
   assert.throws(() => findGitInPath({ PATH: join(base, 'nada-aqui') }), /Git não foi encontrado/);
 });
@@ -247,9 +463,13 @@ test('detalhes do commit: arquivos alterados, renomeados e removidos', async () 
   assert.equal(details.comparedTo, first!.hash);
   const byPath = Object.fromEntries(details.files.map((f) => [f.path, f]));
   assert.deepEqual(byPath['app.txt'], { path: 'app.txt', status: 'modified', additions: 2, deletions: 1 });
+  // app.txt +2 −1; renomeado sem mudar 0/0; apagar.txt −1.
+  assert.equal(details.totalAdditions, 2);
+  assert.equal(details.totalDeletions, 2);
   assert.equal(byPath['novo.txt']?.status, 'renamed');
   assert.equal(byPath['novo.txt']?.oldPath, 'antigo.txt');
   assert.equal(byPath['apagar.txt']?.status, 'deleted');
+  assert.equal(details.uncounted, undefined);
 
   // Primeiro commit: tudo aparece como adicionado.
   const root = await readCommitDetails(repo, first!.hash);
@@ -261,6 +481,18 @@ test('detalhes do commit: arquivos alterados, renomeados e removidos', async () 
 test('recusa "hash" que tentaria virar uma opção do Git', async () => {
   const repo = await findRepo(gitPath, join(base, 'detalhes'));
   await assert.rejects(readCommitDetails(repo, '--output=/tmp/x'), /Commit inválido/);
+});
+
+test('readCommits recusa posição e quantidade fora do que o Git aceita', async () => {
+  const repo = await findRepo(gitPath, join(base, 'detalhes'));
+  for (const skip of [-1, 1.5, Number.NaN, MAX_SKIP + 1, Number.MAX_SAFE_INTEGER]) {
+    await assert.rejects(readCommits(repo, skip, 10), /Posição inválida/, String(skip));
+  }
+  for (const limit of [0, -5, 2.5, MAX_LIMIT + 1]) {
+    await assert.rejects(readCommits(repo, 0, limit), /Quantidade de commits inválida/, String(limit));
+  }
+  // No limite ainda funciona (lista vazia, sem erro do Git).
+  assert.deepEqual(await readCommits(repo, MAX_SKIP, MAX_LIMIT), { commits: [], hasMore: false });
 });
 
 test('detalhes recusam objetos que não são commits e não confundem hash com arquivo', async () => {
@@ -311,6 +543,53 @@ test('detalhes aparecem mesmo sem o conteúdo dos arquivos (ex.: clone parcial s
       ['novo.txt', 'added', null],
     ],
   );
+  assert.equal(details.uncounted, true);
+});
+
+test('commit com arquivos demais: lista aparece sem contar as linhas', async () => {
+  const folder = join(base, 'gigante');
+  git(base, 'init', folder);
+  commit(folder, 'leia.txt', 'Primeiro');
+  // Monta o commit direto no índice (bem mais rápido que criar mil arquivos no disco).
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: folder, env, input: 'arquivo\n', encoding: 'utf8' }).trim();
+  const lines = Array.from({ length: MAX_COUNTED_FILES + 1 }, (_, i) => `100644 ${blob}\tmuitos/f${i}.txt\n`).join('');
+  execFileSync('git', ['update-index', '--index-info'], { cwd: folder, env, input: lines });
+  git(folder, 'commit', '-m', 'Sobe a pasta inteira');
+
+  const repo = await findRepo(gitPath, folder);
+  const [big, small] = (await readCommits(repo, 0, 10)).commits;
+  const details = await readCommitDetails(repo, big!.hash);
+  assert.equal(details.totalFiles, MAX_COUNTED_FILES + 1);
+  assert.equal(details.files.length, 500);
+  assert.equal(details.uncounted, true);
+  assert.ok(details.files.every((f) => f.status === 'added' && f.additions === null));
+  assert.equal(details.totalAdditions, 0);
+  assert.equal(details.totalDeletions, 0);
+
+  // Commit pequeno continua com as linhas contadas.
+  const normal = await readCommitDetails(repo, small!.hash);
+  assert.equal(normal.uncounted, undefined);
+  assert.equal(normal.files[0]?.additions, 1);
+});
+
+test('commit com mais arquivos do que a tela mostra: +N −M somam o commit inteiro', async () => {
+  const folder = join(base, 'seiscentos');
+  git(base, 'init', folder);
+  commit(folder, 'leia.txt', 'Primeiro');
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: folder, env, input: 'um\ndois\n', encoding: 'utf8' }).trim();
+  const lines = Array.from({ length: 600 }, (_, i) => `100644 ${blob}\tpasta/f${i}.txt\n`).join('');
+  execFileSync('git', ['update-index', '--index-info'], { cwd: folder, env, input: lines });
+  git(folder, 'commit', '-m', 'Seiscentos arquivos');
+
+  const repo = await findRepo(gitPath, folder);
+  const [latest] = (await readCommits(repo, 0, 10)).commits;
+  const details = await readCommitDetails(repo, latest!.hash);
+  assert.equal(details.uncounted, undefined);
+  assert.equal(details.totalFiles, 600);
+  assert.equal(details.files.length, 500);
+  // 600 arquivos × 2 linhas, e não só os 500 que vão para a tela (seria 1000).
+  assert.equal(details.totalAdditions, 1200);
+  assert.equal(details.totalDeletions, 0);
 });
 
 test('branch sem merge: filtro, comparação com a main e onde cada commit está', async () => {
@@ -341,6 +620,15 @@ test('branch sem merge: filtro, comparação com a main e onde cada commit está
 
   const feature = list.branches.find((b) => b.name === 'feature/perfil')!;
   assert.deepEqual(await readBranchStatus(repo, mainBranch!.hash, feature.hash), { ahead: 2, behind: 1 });
+
+  // Comando único (Git ≥ 2.41) dá o mesmo resultado que o rev-list de cada branch.
+  const all = await readAllBranchStatus(repo, mainBranch!.hash);
+  if (all) {
+    for (const branch of list.branches) {
+      assert.deepEqual(all.get(branch.hash), await readBranchStatus(repo, mainBranch!.hash, branch.hash), branch.name);
+    }
+  }
+  await assert.rejects(readAllBranchStatus(repo, '--output=x'), /Commit inválido/);
 
   // Filtro "minha branch e a main": a branch "outra" fica de fora.
   const filtered = await readCommits(repo, 0, 50, ['HEAD', 'refs/heads/main']);

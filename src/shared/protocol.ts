@@ -37,15 +37,27 @@ export interface FileChange {
 export interface CommitDetails extends Commit {
   committerName: string;
   committerDate: string;
-  /** Mensagem completa sem a primeira linha. */
+  /** Mensagem completa sem o título (o 1º parágrafo, que vai em `subject`, como na lista). */
   body: string;
   files: FileChange[];
   /** Quantos arquivos mudaram no total (a lista `files` pode vir cortada). */
   totalFiles: number;
+  /**
+   * Linhas adicionadas e removidas somadas em TODOS os arquivos do commit, não só nos que vieram em
+   * `files` (que pode vir cortada). Arquivos binários não entram. `0` quando `uncounted`.
+   */
+  totalAdditions: number;
+  totalDeletions: number;
   /** Com qual commit as mudanças foram comparadas (o primeiro pai). `null` no primeiro commit. */
   comparedTo: string | null;
   /** Em quais branches este commit aparece. `null` se não deu para descobrir. */
   placement: CommitPlacement | null;
+  /**
+   * `true` quando as linhas (+/−) não foram contadas: commit com arquivos demais, ou conteúdo dos
+   * arquivos fora do computador (clone parcial sem internet). Aí `additions`/`deletions` vêm `null`
+   * sem que o arquivo seja binário.
+   */
+  uncounted?: true;
 }
 
 /** Onde um commit está: se já entrou na branch principal e em quais branches ele aparece. */
@@ -146,6 +158,8 @@ export type FromCommitsView =
   | { type: 'load'; gen: number; filter: CommitFilter; skip: number; count: number }
   | { type: 'openCommit'; hash: string }
   | { type: 'openFolder' }
+  /** Abre a área Controle do Código-Fonte do VS Code (projeto sem commits: onde se faz o primeiro). */
+  | { type: 'openSourceControl' }
   /** Aceita o repositório da pasta acima. `always`: para todos os projetos (muda a configuração do Git). */
   | { type: 'openParentRepo'; always: boolean };
 

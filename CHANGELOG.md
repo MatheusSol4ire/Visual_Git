@@ -29,3 +29,22 @@
 - Robustez: grafo correto com `log.showSignature` ligado, refs internas fora da lista, prazo para cada comando do Git,
   clone parcial sem internet, branch órfã no filtro e respostas fora de ordem descartadas.
 - Pacote da extensão sem source maps e com build de produção automático antes de publicar.
+- Mais rápido em repositórios grandes: comparação de todas as branches com a principal de uma vez, menos processos
+  do Git por página, arquivos e linhas de um commit lidos num só comando, e pedidos antigos cancelados.
+- Commits com mais de 1000 arquivos abrem rápido (sem contar linhas); o total "+N −M" soma todos os arquivos do commit.
+- Casos raros corrigidos: tag com o mesmo nome da branch, arquivo com TAB no nome, título de commit com várias linhas,
+  pasta com espaço no fim do nome, repositório na raiz de um disco, Git antigo e repositórios no formato reftable.
+- Segurança: o Git de reserva nunca é um executável de dentro da pasta aberta; regras mais restritas nas telas da
+  extensão; caracteres invisíveis que invertem o texto aparecem como código (ex.: `<U+202E>`) em nomes e caminhos.
+- Arquivos cujo nome começa com ".." (ex.: `..env.example`) abrem no editor de diferenças.
+- A aba de detalhes leva o assunto do commit no título; "Código do commit copiado" ao copiar.
+- Comando "Visual Git: Mostrar histórico de commits" e opções das configurações com nomes em português.
+- Grafo mais leve na rolagem, linhas sem emendas visíveis e largura que acompanha o trecho visível.
+- Nomes longos de branch ficam com "…"; etiquetas da aba de detalhes quebram linha em abas estreitas.
+- Alto contraste: a linha aberta continua marcada mesmo sem foco na lista.
+- Textos mais claros para quem não conhece Git: commit fora de uma branch, destaque de branch, merges, lista vazia
+  (com botão para abrir o Controle do Código-Fonte), branch apagada no filtro e o "N fora da main" depois de Squash/Rebase.
+- Tempo relativo que se atualiza sozinho e segue o calendário ("ontem", "há 1 mês"); datas no mesmo formato em toda parte
+  e números grandes com ponto ("1.834 arquivos").
+- Leitor de tela: posição na lista, tipo de cada etiqueta, aviso de carregamento e confirmação de cópia ("Copiado!").
+- Requer Node 22.18 ou mais novo para compilar.

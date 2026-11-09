@@ -82,6 +82,15 @@ export function resolveFilter(
   return { filter: { kind: 'all' }, revisions: undefined };
 }
 
+/**
+ * O filtro pedido é exatamente "todas as branches". Com ele, `resolveFilter` devolve "todas" sem
+ * `revisions` qualquer que seja a lista de branches, então o `git log` pode começar antes de a lista
+ * chegar. (Um filtro inválido também vira "todas", mas não conta: no "carregar mais" ele vira recarga.)
+ */
+export function isAllFilter(requested: unknown): boolean {
+  return (requested as { kind?: unknown } | null | undefined)?.kind === 'all';
+}
+
 /** true quando `resolveFilter` manteve o filtro pedido (não voltou para "todas" porque a branch sumiu). */
 export function keptFilter(requested: unknown, filter: CommitFilter): boolean {
   const asked = requested as Partial<CommitFilter> | null | undefined;

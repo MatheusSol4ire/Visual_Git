@@ -28,10 +28,7 @@ export function parseShow(raw: string): ShowInfo | undefined {
   const parents = parseParents(parentList);
   if (!isFullHash(hash) || !parents) return undefined;
 
-  const message = messageParts.join(FIELD).replace(/\r\n/g, '\n').trimEnd();
-  const newline = message.indexOf('\n');
-  const subject = newline === -1 ? message : message.slice(0, newline);
-  const body = newline === -1 ? '' : message.slice(newline + 1).replace(/^\n+/, '');
+  const { subject, body } = splitMessage(messageParts.join(FIELD));
 
   return {
     hash,
@@ -45,6 +42,28 @@ export function parseShow(raw: string): ShowInfo | undefined {
     subject,
     body,
   };
+}
+
+/** Linha "em branco" para o Git: só espaços ASCII (o `isspace` dele). */
+const BLANK = /^[ \t\v\f\r]*$/;
+
+/**
+ * Separa a mensagem (%B) em título e corpo com a mesma regra do `%s` do Git, que é o que a lista
+ * mostra: pula linhas em branco do começo, e o título é o 1º PARÁGRAFO inteiro, com as linhas
+ * juntadas por espaço (sem os espaços do fim de cada uma). O corpo é o resto, sem as linhas em branco
+ * que o separam do título.
+ */
+export function splitMessage(raw: string): { subject: string; body: string } {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  let i = 0;
+  while (i < lines.length && BLANK.test(lines[i] ?? '')) i += 1;
+  const subject: string[] = [];
+  while (i < lines.length && !BLANK.test(lines[i] ?? '')) {
+    subject.push((lines[i] ?? '').replace(/[ \t\v\f\r]+$/, ''));
+    i += 1;
+  }
+  while (i < lines.length && BLANK.test(lines[i] ?? '')) i += 1;
+  return { subject: subject.join(' '), body: lines.slice(i).join('\n').trimEnd() };
 }
 
 function toStatus(code: string): FileStatus {
@@ -67,48 +86,43 @@ function toStatus(code: string): FileStatus {
 }
 
 /**
- * Junta a saída de `git diff-tree -z --name-status` e `git diff-tree -z --numstat`
- * (mesmos argumentos) numa lista de arquivos alterados.
+ * Lê a saída de `git diff-tree -z --raw [--numstat]` numa lista de arquivos alterados.
+ *
+ * Com `-z` o Git não escapa nada nos caminhos, e cada item vem separado por NUL:
+ * - `--raw`: um cabeçalho ":modo modo hash hash STATUS" e depois o caminho (dois, em renomeação/cópia);
+ * - `--numstat` (vem depois de todo o `--raw`): "mais\tmenos\tcaminho" ou, em renomeação,
+ *   "mais\tmenos\t" e depois o caminho antigo e o novo.
+ * Os caminhos são consumidos pela posição, então um nome de arquivo nunca é lido como cabeçalho.
  */
-export function parseFileChanges(nameStatus: string, numstat: string): FileChange[] {
+export function parseDiffTree(raw: string): FileChange[] {
   const files: FileChange[] = [];
   const byPath = new Map<string, FileChange>();
+  const items = raw.split('\0');
 
-  const status = nameStatus.split('\0');
-  for (let i = 0; i < status.length; ) {
-    const code = status[i];
-    if (!code) {
+  for (let i = 0; i < items.length; ) {
+    const item = items[i] ?? '';
+    if (!item) {
       i += 1;
       continue;
     }
-    if (code[0] === 'R' || code[0] === 'C') {
-      const oldPath = status[i + 1] ?? '';
-      const path = status[i + 2] ?? '';
-      i += 3;
-      const file: FileChange = { path, oldPath, status: toStatus(code), additions: null, deletions: null };
+    if (item.startsWith(':')) {
+      // Cabeçalho do --raw: a letra de status é o último campo (ex.: "M", "R087").
+      const code = item.slice(item.lastIndexOf(' ') + 1);
+      const pair = code[0] === 'R' || code[0] === 'C';
+      const oldPath = pair ? (items[i + 1] ?? '') : undefined;
+      const path = items[i + (pair ? 2 : 1)] ?? '';
+      i += pair ? 3 : 2;
+      const file: FileChange = { path, ...(oldPath !== undefined ? { oldPath } : {}), status: toStatus(code), additions: null, deletions: null };
       files.push(file);
       byPath.set(path, file);
-    } else {
-      const path = status[i + 1] ?? '';
-      i += 2;
-      const file: FileChange = { path, status: toStatus(code), additions: null, deletions: null };
-      files.push(file);
-      byPath.set(path, file);
-    }
-  }
-
-  const numbers = numstat.split('\0');
-  for (let i = 0; i < numbers.length; ) {
-    const entry = numbers[i];
-    if (!entry) {
-      i += 1;
       continue;
     }
-    const [added = '-', deleted = '-', inlinePath = ''] = entry.split('\t');
-    let path = inlinePath;
-    if (inlinePath === '') {
+    // Linha do --numstat. O caminho pode ter TAB no nome: tudo depois do 2º TAB é caminho.
+    const [added = '-', deleted = '-', ...rest] = item.split('\t');
+    let path = rest.join('\t');
+    if (path === '') {
       // Renomeação: o caminho antigo e o novo vêm nos dois próximos itens.
-      path = numbers[i + 2] ?? '';
+      path = items[i + 2] ?? '';
       i += 3;
     } else {
       i += 1;

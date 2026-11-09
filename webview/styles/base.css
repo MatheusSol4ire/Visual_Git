@@ -222,7 +222,6 @@ code,
   flex: none;
   max-width: 140px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.82em;
   line-height: 16px;
@@ -271,6 +270,15 @@ code,
   flex: none;
 }
 
+/* O "…" só funciona num bloco: o nome fica num item próprio, que pode encolher (min-width: 0).
+   No contêiner inline-flex o texto solto era cortado no meio da letra, sem reticências. */
+.ref-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------------- Estados vazios / avisos ---------------- */
 .empty {
   display: flex;
@@ -305,4 +313,18 @@ code,
   border-radius: 4px;
   background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
   animation: vg-pulse 1.4s ease-in-out infinite;
+}
+
+/* Texto só para leitor de tela: fora da tela, mas lido normalmente. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

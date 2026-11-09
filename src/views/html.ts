@@ -13,7 +13,8 @@ export function renderWebviewHtml(
   extensionUri: vscode.Uri,
   entry: 'commits' | 'details',
   motion: MotionMode,
-  title: string,
+  // Só nomes fixos: o título entra no HTML sem escape, então nunca pode vir de dados do repositório.
+  title: 'Commits' | 'Commit',
 ): string {
   const dist = vscode.Uri.joinPath(extensionUri, 'dist');
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(dist, `${entry}.js`));
@@ -21,12 +22,17 @@ export function renderWebviewHtml(
   const nonce = randomBytes(16).toString('base64');
 
   // Content Security Policy: só roda o nosso script e só carrega arquivos locais da extensão.
+  // base-uri e form-action não seguem o default-src: sem elas, um <base> ou <form> que algum dia
+  // entrasse na tela (ex.: texto do repositório tratado como HTML) não seria barrado.
+  // Sem "data:" nas imagens: as telas não usam (o grafo é SVG desenhado na própria página).
   const csp = [
     `default-src 'none'`,
     `style-src ${webview.cspSource}`,
     `font-src ${webview.cspSource}`,
-    `img-src ${webview.cspSource} data:`,
+    `img-src ${webview.cspSource}`,
     `script-src 'nonce-${nonce}'`,
+    `base-uri 'none'`,
+    `form-action 'none'`,
   ].join('; ');
 
   return `<!DOCTYPE html>

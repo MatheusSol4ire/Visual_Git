@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keptFilter, parseBranches, pickBase, resolveFilter, type BranchList } from './branches.ts';
+import { isAllFilter, keptFilter, parseBranches, pickBase, resolveFilter, type BranchList } from './branches.ts';
 
 const H1 = '1'.repeat(40);
 const H2 = '2'.repeat(40);
@@ -69,6 +69,26 @@ test('resolveFilter só aceita branches que existem', () => {
   }
   // Projeto sem branches: nada a filtrar.
   assert.deepEqual(resolveFilter({ kind: 'current' }, { branches: [], remoteDefault: null }, null).filter, { kind: 'all' });
+});
+
+test('isAllFilter: "todas" não depende da lista de branches (o log pode começar antes dela)', () => {
+  assert.equal(isAllFilter({ kind: 'all' }), true);
+  for (const other of [{ kind: 'current' }, { kind: 'branch', ref: 'refs/heads/a' }, { kind: 'x' }, undefined, null, 'all']) {
+    assert.equal(isAllFilter(other), false);
+  }
+  // Seja qual for a lista (vazia, com a principal, só remotas), "todas" fica "todas" e sem revisions.
+  const lists: BranchList[] = [
+    { branches: [], remoteDefault: null },
+    { branches: [{ name: 'main', ref: 'refs/heads/main', hash: H1, type: 'branch', current: true }], remoteDefault: null },
+    { branches: [{ name: 'origin/x', ref: 'refs/remotes/origin/x', hash: H2, type: 'remote', current: false }], remoteDefault: null },
+  ];
+  for (const list of lists) {
+    for (const baseRef of [null, 'refs/heads/main']) {
+      const resolved = resolveFilter({ kind: 'all' }, list, baseRef);
+      assert.deepEqual(resolved, { filter: { kind: 'all' }, revisions: undefined });
+      assert.equal(keptFilter({ kind: 'all' }, resolved.filter), true);
+    }
+  }
 });
 
 test('keptFilter diz se o filtro pedido foi mantido ou virou "todas"', () => {

@@ -136,8 +136,11 @@ function isCommitDetails(value: unknown): value is CommitDetails {
     isString(value.body) &&
     arrayOf(value.files, isFileChange) &&
     isCount(value.totalFiles) &&
+    isCount(value.totalAdditions) &&
+    isCount(value.totalDeletions) &&
     orNull(value.comparedTo, isString) &&
-    orNull(value.placement, isPlacement)
+    orNull(value.placement, isPlacement) &&
+    (value.uncounted === undefined || value.uncounted === true)
   );
 }
 

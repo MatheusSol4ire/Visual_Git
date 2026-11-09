@@ -32,10 +32,12 @@ export async function getBuiltInGitApi(): Promise<BuiltInGitApi | undefined> {
 /**
  * Caminho absoluto do Git.
  * 1º: o mesmo Git que a extensão nativa do VS Code já encontrou e usa (respeita `git.path`).
- * 2º: busca segura no PATH (nunca na pasta do projeto).
+ * 2º: busca segura no PATH (nunca na pasta do projeto: nem entradas relativas, nem um Git que fique
+ *     dentro de uma das pastas abertas).
  */
 export async function resolveGitPath(): Promise<string> {
   const path = (await getBuiltInGitApi())?.git.path;
   if (path && isAbsolute(path)) return path;
-  return findGitInPath();
+  const projectFolders = (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file').map((f) => f.uri.fsPath);
+  return findGitInPath(process.env, projectFolders);
 }

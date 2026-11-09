@@ -7,7 +7,7 @@ Uma extensão para o VS Code que mostra o histórico de commits do seu projeto d
 ## Como usar
 
 1. Abra a pasta de um projeto que usa Git no VS Code.
-2. Clique no ícone do **Visual Git** na barra lateral (ou rode **Visual Git: Abrir** pela paleta de comandos, `Ctrl+Shift+P`).
+2. Clique no ícone do **Visual Git** na barra lateral (ou rode **Visual Git: Mostrar histórico de commits** pela paleta de comandos, `Ctrl+Shift+P`).
 3. Clique num commit para ver os detalhes: mensagem completa, autor, data e arquivos alterados.
 4. Clique num arquivo para ver o **antes e depois** dele.
 
@@ -37,16 +37,16 @@ Navegação pelo teclado: `↑` `↓` para escolher, `Enter` para abrir, `Esc` p
 
 As animações podem ser ligadas ou desligadas em **Configurações → Visual Git → Animations**:
 
-| Valor | Comportamento |
+| Opção (valor no settings.json) | Comportamento |
 |---|---|
-| `auto` (padrão) | Segue o `workbench.reduceMotion` do VS Code e a preferência do sistema |
-| `on` | Sempre ligadas |
-| `off` | Sempre desligadas |
+| Automático (`auto`, padrão) | Segue o VS Code (configuração "Reduzir movimento", `workbench.reduceMotion`) e a preferência do sistema |
+| Sempre ligadas (`on`) | Sempre ligadas |
+| Sempre desligadas (`off`) | Sempre desligadas |
 
 ### Git numa pasta acima
 
 Se a pasta aberta fica dentro de outro projeto com Git, o Visual Git pergunta antes de mostrar o histórico dele.
-O botão **Sempre abrir sem perguntar** muda só a configuração **Visual Git → Parent Folder Repos** (`ask` / `always`),
+O botão **Sempre abrir sem perguntar** muda só a configuração **Visual Git → Parent Folder Repos** (Perguntar / Sempre mostrar; `ask` / `always` no settings.json),
 nunca a do Git do VS Code. Se `git.openRepositoryInParentFolders` estiver em `never`, ele continua valendo.
 
 ## Desenvolvendo

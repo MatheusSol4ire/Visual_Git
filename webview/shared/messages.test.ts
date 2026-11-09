@@ -41,6 +41,8 @@ const details = {
     { path: 'img.png', oldPath: 'old.png', status: 'renamed', additions: null, deletions: null },
   ],
   totalFiles: 2,
+  totalAdditions: 1,
+  totalDeletions: 0,
   comparedTo: P,
   placement: { baseName: 'main', inBase: true, branches: [{ name: 'main', type: 'branch' }], totalBranches: 1 },
 };
@@ -98,6 +100,8 @@ test('detalhes ignoram mensagens fora do formato', () => {
     { type: 'details', details: { ...details, files: [{ path: 'a', status: 'sumiu', additions: 0, deletions: 0 }] } },
     { type: 'details', details: { ...details, files: [{ path: 'a', status: 'added', additions: '1', deletions: 0 }] } },
     { type: 'details', details: { ...details, totalFiles: -2 } },
+    { type: 'details', details: { ...details, totalAdditions: undefined } },
+    { type: 'details', details: { ...details, totalDeletions: 1.5 } },
     { type: 'details', details: { ...details, placement: { baseName: 'main' } } },
     { type: 'details', details: { ...details, body: undefined } },
     { type: 'loading' },

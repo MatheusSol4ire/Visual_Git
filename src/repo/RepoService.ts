@@ -4,6 +4,7 @@ import { findRepo, GitError, GitNotFoundError, NotARepoError, readGitDirs, type 
 import { resolveGitPath } from '../git/resolveGit.ts';
 import type { RepoState } from '../shared/protocol.ts';
 import { comparablePath, isOutsideFolder, parentFolderMode } from './parentFolder.ts';
+import { watchPatterns } from './watchPatterns.ts';
 
 /** Onde guardamos (por projeto aberto) os repositórios de pastas acima que o usuário aceitou. */
 const ALLOWED_PARENTS_KEY = 'visualGit.allowedParentRepos';
@@ -131,12 +132,8 @@ export class RepoService implements vscode.Disposable {
     this.disposeWatchers();
     try {
       const { gitDir, commonDir } = await readGitDirs(repo);
-      const patterns = [
-        new vscode.RelativePattern(vscode.Uri.file(gitDir), 'HEAD'),
-        new vscode.RelativePattern(vscode.Uri.file(commonDir), '{packed-refs,refs/**}'),
-      ];
-      for (const pattern of patterns) {
-        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      for (const { base, glob } of watchPatterns(gitDir, commonDir)) {
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(base), glob));
         const onEvent = () => this.scheduleChange();
         this.watchers.push(watcher, watcher.onDidCreate(onEvent), watcher.onDidChange(onEvent), watcher.onDidDelete(onEvent));
       }

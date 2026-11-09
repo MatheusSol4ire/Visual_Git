@@ -45,6 +45,11 @@ export interface LayoutState {
   mainNext: string | null;
   /** Se existe uma linha principal: a cor 0 fica reservada para ela. */
   hasMain: boolean;
+  /**
+   * Quantos trilhos a tela desenha. Trilho que só passa além disso não vira `Segment` (nunca
+   * apareceria): assim o custo de cada linha não cresce com o número de branches abertas.
+   */
+  maxLanes: number;
 }
 
 export interface GraphCommit {
@@ -56,15 +61,21 @@ export const PALETTE_SIZE = 8;
 /** Cor da linha principal. */
 export const MAIN_COLOR = 0;
 
-/** @param mainTip ponta da branch principal, que fica fixa no trilho 0. */
-export function createLayoutState(mainTip: string | null = null): LayoutState {
-  return { lanes: [], children: [], colors: [], nextColor: 0, mainNext: mainTip, hasMain: mainTip !== null };
+/**
+ * @param mainTip ponta da branch principal, que fica fixa no trilho 0.
+ * @param maxLanes quantos trilhos a tela desenha (o resto é cortado); sem limite, guarda todas as ligações.
+ */
+export function createLayoutState(mainTip: string | null = null, maxLanes = Infinity): LayoutState {
+  return { lanes: [], children: [], colors: [], nextColor: 0, mainNext: mainTip, hasMain: mainTip !== null, maxLanes };
 }
 
-/** Primeiro trilho livre. O trilho 0 fica guardado enquanto a linha principal não terminou. */
-function firstFree(state: LayoutState): number {
+/**
+ * Primeiro trilho livre. O trilho 0 fica guardado enquanto a linha principal não terminou.
+ * `from` pula trilhos que já se sabe estarem ocupados (os pais de um mesmo merge vão um depois do outro).
+ */
+function firstFree(state: LayoutState, from = 0): number {
   const start = state.mainNext !== null ? 1 : 0;
-  for (let i = start; i < state.lanes.length; i++) {
+  for (let i = Math.max(start, from); i < state.lanes.length; i++) {
     if (state.lanes[i] == null) return i;
   }
   for (let i = state.lanes.length; i < start; i++) state.lanes[i] = null;
@@ -91,7 +102,7 @@ function open(state: LayoutState, lane: number, parent: string, child: string, c
  */
 export function layoutCommits(commits: GraphCommit[], state: LayoutState): GraphRow[] {
   const rows: GraphRow[] = [];
-  const { lanes, children, colors } = state;
+  const { lanes, children, colors, maxLanes } = state;
 
   for (const commit of commits) {
     const onMain = state.mainNext === commit.hash;
@@ -111,21 +122,27 @@ export function layoutCommits(commits: GraphCommit[], state: LayoutState): Graph
       }
     }
 
+    // A largura conta todos os trilhos usados, mesmo os que não viram `Segment` (além de `maxLanes`).
+    let width = col + 1;
+
     // ---- Metade de cima: tudo que vem da linha anterior.
     const top: Segment[] = [];
-    const passing: number[] = [];
+    /** Trilhos que só passam por esta linha: o mesmo objeto serve para as duas metades. */
+    const passing: Segment[] = [];
     for (let j = 0; j < lanes.length; j++) {
       const waitingFor = lanes[j];
       if (waitingFor == null) continue;
-      const segment = { from: j, color: colors[j] ?? 0, child: children[j] ?? '' };
+      if (j >= width) width = j + 1;
       if (waitingFor === commit.hash) {
-        // Ligações que esperavam por este commit convergem para a bolinha.
-        top.push({ ...segment, to: col });
+        // Ligações que esperavam por este commit convergem para a bolinha (sempre guardadas: chegam
+        // nela, mesmo vindo de além do corte).
+        top.push({ from: j, to: col, color: colors[j] ?? 0, child: children[j] ?? '' });
         lanes[j] = null;
         children[j] = null;
-      } else {
-        top.push({ ...segment, to: j });
-        passing.push(j);
+      } else if (j < maxLanes) {
+        const segment = { from: j, to: j, color: colors[j] ?? 0, child: children[j] ?? '' };
+        top.push(segment);
+        passing.push(segment);
       }
     }
 
@@ -141,27 +158,24 @@ export function layoutCommits(commits: GraphCommit[], state: LayoutState): Graph
       bottom.push({ from: col, to: col, color: nodeColor, child: commit.hash });
     }
 
+    let searchFrom = 0;
     for (const parent of otherParents) {
       // Merge: cada pai extra é outra linha de trabalho chegando, com trilho próprio.
-      const lane = firstFree(state);
+      const lane = firstFree(state, searchFrom);
+      searchFrom = lane + 1;
+      if (lane >= width) width = lane + 1;
       const color = parent === state.mainNext ? MAIN_COLOR : takeColor(state);
       open(state, lane, parent, commit.hash, color);
       bottom.push({ from: col, to: lane, color, child: commit.hash });
     }
 
-    for (const j of passing) {
-      bottom.push({ from: j, to: j, color: colors[j] ?? 0, child: children[j] ?? '' });
-    }
+    for (const segment of passing) bottom.push(segment);
 
     // Remove trilhos vazios do final, para o grafo não ficar largo à toa.
     while (lanes.length > 0 && lanes[lanes.length - 1] == null) {
       lanes.pop();
       children.pop();
     }
-
-    let width = col + 1;
-    for (const segment of top) width = Math.max(width, segment.from + 1, segment.to + 1);
-    for (const segment of bottom) width = Math.max(width, segment.from + 1, segment.to + 1);
 
     rows.push({ col, color: nodeColor, top, bottom, width, isMerge: commit.parents.length > 1 });
   }
@@ -193,6 +207,51 @@ export function fitRow(row: GraphRow, lanes: number): FittedRow {
     bottom: row.bottom.map((segment) => (segment.from === row.col ? { ...segment, from: last } : segment)),
     overflow: true,
   };
+}
+
+/**
+ * Quantos trilhos o grafo precisa para desenhar as linhas `first` até `last - 1` (pelo menos 1, no
+ * máximo `maxLanes`). Usado com as linhas da tela: um trecho largo lá no fim do histórico não
+ * alarga o grafo do topo.
+ */
+export function lanesFor(rows: readonly GraphRow[], first: number, last: number, maxLanes: number): number {
+  let lanes = 1;
+  const end = Math.min(last, rows.length);
+  for (let i = Math.max(0, first); i < end; i++) lanes = Math.max(lanes, rows[i]?.width ?? 0);
+  return Math.min(Math.max(1, maxLanes), lanes);
+}
+
+/** Ligações de uma linha já separadas para desenhar. */
+export interface SplitSegments {
+  /** Trilhos que só atravessam a linha: um traço único de cima a baixo. */
+  through: Segment[];
+  /** Metade de cima, sem os trilhos que atravessam. */
+  top: Segment[];
+  /** Metade de baixo, sem os trilhos que atravessam. */
+  bottom: Segment[];
+}
+
+/**
+ * Separa os trilhos que só atravessam a linha (a mesma ligação em cima e embaixo, fora do trilho da
+ * bolinha `col`). Desenhado em duas metades, as pontas arredondadas se sobrepunham no meio da linha e,
+ * com o caminho apagado (opacidade), a sobreposição aparecia como um pontinho mais claro.
+ */
+export function splitThrough(top: Segment[], bottom: Segment[], col: number): SplitSegments {
+  const below = new Map<number, Segment>();
+  for (const segment of bottom) if (segment.from === segment.to && segment.from !== col) below.set(segment.from, segment);
+  const through: Segment[] = [];
+  const crossed = new Set<Segment>();
+  const restTop: Segment[] = [];
+  for (const segment of top) {
+    const match = segment.from === segment.to && segment.from !== col ? below.get(segment.from) : undefined;
+    if (match && match.child === segment.child && match.color === segment.color) {
+      through.push(segment);
+      crossed.add(match);
+    } else {
+      restTop.push(segment);
+    }
+  }
+  return { through, top: restTop, bottom: bottom.filter((segment) => !crossed.has(segment)) };
 }
 
 /**
