@@ -282,7 +282,7 @@ function App() {
       <FilterBar data={data} filter={filter} onChange={changeFilter} />
       {lostBranch !== null && <LostBranchNotice name={lostBranch} onClose={() => setLostBranch(null)} />}
       <BranchSummary overview={data.overview} />
-      {pinned && <HighlightBar name={pinned.name} onClear={() => setPinned(null)} />}
+      {pinned && <HighlightBar name={pinned.name} detached={pinned.type === 'head'} onClear={() => setPinned(null)} />}
       <CommitList
         data={data}
         selected={selected}
@@ -407,16 +407,23 @@ function LostBranchNotice({ name, onClose }: { name: string; onClose: () => void
   );
 }
 
-function HighlightBar({ name, onClear }: { name: string; onClear: () => void }) {
+/** `detached`: etiqueta "você está aqui" (HEAD solto) — o nome seria o "HEAD" cru do Git. */
+function HighlightBar({ name, detached, onClear }: { name: string; detached: boolean; onClear: () => void }) {
   return (
     <div class="highlight-bar" role="status">
-      <span class="highlight-text">
-        Destacando os commits que fazem parte de{' '}
-        <strong>
-          <bdi>{showControls(name)}</bdi>
-        </strong>
-        . Os apagados não estão nela.
-      </span>
+      {detached ? (
+        <span class="highlight-text">
+          Destacando os commits que levam até este commit. Os apagados não fazem parte dele.
+        </span>
+      ) : (
+        <span class="highlight-text">
+          Destacando os commits que fazem parte de{' '}
+          <strong>
+            <bdi>{showControls(name)}</bdi>
+          </strong>
+          . Os apagados não estão nela.
+        </span>
+      )}
       <button type="button" class="ghost small-button" onClick={onClear} title="Parar de destacar (Esc)">
         Limpar
       </button>
