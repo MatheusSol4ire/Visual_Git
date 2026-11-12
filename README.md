@@ -1,94 +1,67 @@
 # Visual Git
 
-Uma extensão para o VS Code que mostra o histórico de commits do seu projeto de forma visual: simples para quem está começando e bonita para o dia a dia.
+Extensão para o VS Code que mostra o histórico de commits de um projeto como um desenho: cada commit é uma bolinha, cada branch é uma linha colorida, e dá para clicar em tudo.
 
-> 🚧 **Em desenvolvimento.** A fase 1 foca no repositório local: grafo de commits, branches e detalhes de cada commit. A integração com o GitHub vem depois.
+A ideia é que alguém que está aprendendo Git consiga olhar e entender o que aconteceu no projeto, sem decorar comando nenhum.
+
+<!-- Coloque aqui um print ou GIF da extensão funcionando, ex.: ![Visual Git](imagens/visual-git.png) -->
+
+> Em desenvolvimento. Por enquanto funciona com o repositório local; a integração com o GitHub vem depois.
+
+## O que ela faz
+
+- Lista os commits na barra lateral com o grafo das branches ao lado.
+- A branch principal (`main`) fica sempre na primeira linha, à esquerda. As outras saem dela e voltam quando são juntadas.
+- Clicar num commit abre uma aba com a mensagem completa, o autor, a data e os arquivos que mudaram.
+- Clicar num arquivo abre o "antes e depois" no editor de diferenças do próprio VS Code.
+- Clicar na etiqueta de uma branch acende só o caminho dela e apaga o resto.
+- Mostra quantos commits uma branch tem que ainda não foram para a `main` (e vice-versa).
+- Se atualiza sozinha quando você faz um commit, troca de branch ou baixa novidades.
+
+Tudo roda no seu computador, usando o Git que já está instalado. Nada é enviado para a internet.
 
 ## Como usar
 
-1. Abra a pasta de um projeto que usa Git no VS Code.
-2. Clique no ícone do **Visual Git** na barra lateral (ou rode **Visual Git: Mostrar histórico de commits** pela paleta de comandos, `Ctrl+Shift+P`).
-3. Clique num commit para ver os detalhes: mensagem completa, autor, data e arquivos alterados.
-4. Clique num arquivo para ver o **antes e depois** dele.
+1. Abra no VS Code uma pasta que usa Git.
+2. Clique no ícone do Visual Git na barra lateral, ou rode **Visual Git: Mostrar histórico de commits** em `Ctrl+Shift+P`.
+3. Clique nos commits, nos arquivos e nas etiquetas.
 
-A lista se atualiza sozinha quando você faz um commit, troca de branch ou baixa novidades do servidor.
+Pelo teclado: `↑` `↓` escolhem um commit, `Enter` abre e `Esc` limpa o destaque.
 
-| Elemento | Significado |
+### Como ler o desenho
+
+| No desenho | Quer dizer |
 |---|---|
 | Bolinha cheia | Um commit |
-| Bolinha vazada | Uma junção (merge) de duas linhas de trabalho |
-| Anel em volta da bolinha | O commit onde você está agora |
-| Etiqueta destacada | A branch em que você está |
+| Bolinha vazada | Um merge (duas linhas de trabalho se juntando) |
+| Anel em volta da bolinha | O commit em que você está agora |
 | Etiqueta com nuvem | Branch que está no servidor (ex.: GitHub) |
-| Etiqueta com marcador | Versão (tag) |
-| Etiqueta "3 fora da main" | Commits desta branch que ainda não foram juntados na branch principal |
+| Etiqueta com marcador | Uma versão (tag) |
+| "3 fora da main" | Commits desta branch que ainda não entraram na principal |
 
-### Branches
+### Configurações
 
-- **A branch principal fica sempre à esquerda**, em azul. As outras branches saem dela e, quando são juntadas (merge), voltam para ela. A principal é a branch padrão do servidor; se não houver uma, `main` ou `master`.
-- **No topo**, uma frase avisa quando a sua branch tem commits que ainda não estão na principal (ou quando a principal tem novidades que a sua branch não tem).
-- **Destacar um caminho:** clique numa etiqueta de branch para acender só o histórico dela; o resto fica apagado. Clique de novo, em **Limpar** ou aperte `Esc` para voltar.
-- **Mostrar:** escolha ver todas as branches, só a sua branch com a principal, ou uma branch específica com a principal.
-- **Na aba de detalhes**, cada commit diz se já está na principal e em quais branches ele aparece.
+- **Visual Git › Animations**: `auto` (segue o "Reduzir movimento" do VS Code), `on` ou `off`.
+- **Visual Git › Parent Folder Repos**: o que fazer quando o Git do projeto está numa pasta acima da que você abriu. O padrão é perguntar antes.
 
-Navegação pelo teclado: `↑` `↓` para escolher, `Enter` para abrir, `Esc` para parar de destacar.
+## Rodando o código
 
-### Animações
-
-As animações podem ser ligadas ou desligadas em **Configurações → Visual Git → Animations**:
-
-| Opção (valor no settings.json) | Comportamento |
-|---|---|
-| Automático (`auto`, padrão) | Segue o VS Code (configuração "Reduzir movimento", `workbench.reduceMotion`) e a preferência do sistema |
-| Sempre ligadas (`on`) | Sempre ligadas |
-| Sempre desligadas (`off`) | Sempre desligadas |
-
-### Git numa pasta acima
-
-Se a pasta aberta fica dentro de outro projeto com Git, o Visual Git pergunta antes de mostrar o histórico dele.
-O botão **Sempre abrir sem perguntar** muda só a configuração **Visual Git → Parent Folder Repos** (Perguntar / Sempre mostrar; `ask` / `always` no settings.json),
-nunca a do Git do VS Code. Se `git.openRepositoryInParentFolders` estiver em `never`, ele continua valendo.
-
-## Desenvolvendo
-
-Requisitos: [Node.js](https://nodejs.org) 22.18 ou mais novo, [Git](https://git-scm.com) e o VS Code.
+Precisa de [Node.js](https://nodejs.org) 22.18 ou mais novo, [Git](https://git-scm.com) e o VS Code.
 
 ```bash
-npm install        # instala as dependências
-npm run check      # verificação de tipos e testes
+npm install
+npm run check     # confere os tipos e roda os testes
 ```
 
-- **Testar:** aperte `F5` no VS Code. Abre uma segunda janela com a extensão carregada.
-- **Editar com recarga rápida:** deixe `npm run watch` rodando num terminal e, na janela de teste, use `Ctrl+R` para recarregar.
-- **Gerar o instalável:** `npm run package` cria um arquivo `visual-git-<versão>.vsix`.
-- **Instalar o `.vsix`:** `code --install-extension visual-git-<versão>.vsix`
+Depois aperte `F5` no VS Code: abre uma segunda janela com a extensão carregada. Para gerar o instalável, `npm run package` cria um `visual-git-<versão>.vsix`.
 
-### Estrutura
+## Como funciona por dentro
 
-```
-src/                    roda dentro do VS Code (Node)
-  extension.ts          ponto de entrada da extensão
-  settings.ts           leitura das configurações
-  git/                  leitura do Git (sem nada de tela)
-  repo/                 qual repositório está aberto e quando ele muda
-  views/                barra lateral, aba de detalhes e a ponte com as telas
-  shared/protocol.ts    tipos das mensagens entre extensão e telas
-webview/                as telas (Preact), rodam isoladas dentro do VS Code
-  commits/              lista de commits da barra lateral
-  details/              aba de detalhes do commit
-  graph/                cálculo e desenho do grafo
-  shared/               peças usadas pelas duas telas
-  styles/               visual (cores, animações)
-```
+A extensão tem duas partes que conversam por mensagens: o lado que roda dentro do VS Code e chama o Git (pasta [`src/`](src/)), e as telas, que são pequenas páginas web desenhadas com Preact (pasta [`webview/`](webview/)).
 
-## Privacidade
+O grafo é calculado em [`webview/graph/layout.ts`](webview/graph/layout.ts): cada coluna "espera" pelo commit pai de quem a abriu, e quando esse pai aparece as linhas se juntam nele. A branch principal tem a primeira coluna reservada.
 
-O Visual Git só lê o repositório que está aberto, usando o Git instalado na sua máquina. Nenhum dado é enviado para a internet.
-
-## Segurança
-
-- O Git é sempre executado pelo caminho absoluto: o mesmo que a extensão Git do VS Code usa ou, na falta dela, o encontrado no PATH. Um `git.exe` colocado dentro de um projeto nunca é executado.
-- A extensão só funciona em pastas marcadas como confiáveis (fica desativada no Modo Restrito do VS Code).
+O Git é sempre executado pelo caminho absoluto (nunca um `git.exe` de dentro do projeto aberto), e a extensão fica desligada em pastas que o VS Code ainda não marcou como confiáveis.
 
 ## Licença
 

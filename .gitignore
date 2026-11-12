@@ -21,6 +21,9 @@ graphify-out/
 CLAUDE.md
 CLAUDE.local.md
 
+# Material de estudo pessoal — fica só no computador
+docs/
+
 # Lixo de sistema
 .DS_Store
 Thumbs.db
